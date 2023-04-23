@@ -253,15 +253,20 @@ func (b *bisyncRun) makeListing(ctx context.Context, f fs.Fs, listing string) (l
 	ci := fs.GetConfig(ctx)
 	depth := ci.MaxDepth
 	hashType := hash.None
-	if !ci.IgnoreChecksum {
-		// Currently bisync just honors --ignore-checksum
+	if !b.opt.IgnoreListingChecksum {
+		// Currently bisync just honors --ignore-listing-checksum
+		// (note that this is different from --ignore-checksum)
 		// TODO add full support for checksums and related flags
 		hashType = f.Hashes().GetOne()
 	}
 	ls = newFileList()
 	ls.hash = hashType
 	var lock sync.Mutex
-	err = walk.ListR(ctx, f, "", false, depth, walk.ListObjects, func(entries fs.DirEntries) error {
+	listType := walk.ListObjects
+	if b.opt.CreateEmptySrcDirs {
+		listType = walk.ListAll
+	}
+	err = walk.ListR(ctx, f, "", false, depth, listType, func(entries fs.DirEntries) error {
 		var firstErr error
 		entries.ForObject(func(o fs.Object) {
 			//tr := accounting.Stats(ctx).NewCheckingTransfer(o) // TODO
@@ -282,6 +287,19 @@ func (b *bisyncRun) makeListing(ctx context.Context, f fs.Fs, listing string) (l
 			lock.Unlock()
 			//tr.Done(ctx, nil) // TODO
 		})
+		if b.opt.CreateEmptySrcDirs {
+			entries.ForDir(func(o fs.Directory) {
+				var (
+					hashVal string
+				)
+				time := o.ModTime(ctx).In(TZ)
+				id := "" // TODO
+				lock.Lock()
+				//record size as 0 instead of -1, so bisync doesn't think it's a google doc
+				ls.put(o.Remote(), 0, time, hashVal, id)
+				lock.Unlock()
+			})
+		}
 		return firstErr
 	})
 	if err == nil {
@@ -300,5 +318,6 @@ func (b *bisyncRun) checkListing(ls *fileList, listing, msg string) error {
 	}
 	fs.Errorf(nil, "Empty %s listing. Cannot sync to an empty directory: %s", msg, listing)
 	b.critical = true
+	b.retryable = true
 	return fmt.Errorf("empty %s listing: %s", msg, listing)
 }

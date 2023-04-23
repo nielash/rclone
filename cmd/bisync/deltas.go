@@ -199,22 +199,36 @@ func (b *bisyncRun) applyDeltas(ctx context.Context, ds1, ds2 *deltaSet) (change
 				handled.Add(file)
 			} else if d2.is(deltaOther) {
 				b.indent("!WARNING", file, "New or changed in both paths")
-				b.indent("!Path1", p1+"..path1", "Renaming Path1 copy")
-				if err = operations.MoveFile(ctxMove, b.fs1, b.fs1, file+"..path1", file); err != nil {
-					err = fmt.Errorf("path1 rename failed for %s: %w", p1, err)
-					b.critical = true
-					return
-				}
-				b.indent("!Path1", p2+"..path1", "Queue copy to Path2")
-				copy1to2.Add(file + "..path1")
 
-				b.indent("!Path2", p2+"..path2", "Renaming Path2 copy")
-				if err = operations.MoveFile(ctxMove, b.fs2, b.fs2, file+"..path2", file); err != nil {
-					err = fmt.Errorf("path2 rename failed for %s: %w", file, err)
-					return
+				//if files are identical, leave them alone instead of renaming
+				file1obj, file1objerr := b.fs1.NewObject(ctx, file)
+				file2obj, file2objerr := b.fs2.NewObject(ctx, file)
+
+				if file1objerr == fs.ErrorIsDir && file2objerr == fs.ErrorIsDir {
+					fs.Debugf(nil, "This is a directory, not a file. Skipping equality check and will not rename.")
+				} else {
+					equal := operations.Equal(ctxMove, file1obj, file2obj)
+					if equal {
+						fs.Infof(nil, "Files are equal! Skipping.")
+					} else {
+						b.indent("!Path1", p1+"..path1", "Renaming Path1 copy")
+						if err = operations.MoveFile(ctxMove, b.fs1, b.fs1, file+"..path1", file); err != nil {
+							err = fmt.Errorf("path1 rename failed for %s: %w", p1, err)
+							b.critical = true
+							return
+						}
+						b.indent("!Path1", p2+"..path1", "Queue copy to Path2")
+						copy1to2.Add(file + "..path1")
+
+						b.indent("!Path2", p2+"..path2", "Renaming Path2 copy")
+						if err = operations.MoveFile(ctxMove, b.fs2, b.fs2, file+"..path2", file); err != nil {
+							err = fmt.Errorf("path2 rename failed for %s: %w", file, err)
+							return
+						}
+						b.indent("!Path2", p1+"..path2", "Queue copy to Path1")
+						copy2to1.Add(file + "..path2")
+					}
 				}
-				b.indent("!Path2", p1+"..path2", "Queue copy to Path1")
-				copy2to1.Add(file + "..path2")
 				handled.Add(file)
 			}
 		} else {
@@ -258,6 +272,16 @@ func (b *bisyncRun) applyDeltas(ctx context.Context, ds1, ds2 *deltaSet) (change
 		if err != nil {
 			return
 		}
+
+		//copy empty dirs from path2 to path1 (if --create-empty-src-dirs)
+		if b.opt.CreateEmptySrcDirs {
+			for _, s := range copy2to1.ToList() {
+				_, objerr := b.fs2.NewObject(ctx, s)
+				if objerr == fs.ErrorIsDir {
+					operations.Mkdir(ctx, b.fs1, s)
+				}
+			}
+		}
 	}
 
 	if copy1to2.NotEmpty() {
@@ -266,6 +290,16 @@ func (b *bisyncRun) applyDeltas(ctx context.Context, ds1, ds2 *deltaSet) (change
 		err = b.fastCopy(ctx, b.fs1, b.fs2, copy1to2, "copy1to2")
 		if err != nil {
 			return
+		}
+
+		//copy empty dirs from path1 to path2 (if --create-empty-src-dirs)
+		if b.opt.CreateEmptySrcDirs {
+			for _, s := range copy1to2.ToList() {
+				_, objerr := b.fs1.NewObject(ctx, s)
+				if objerr == fs.ErrorIsDir {
+					operations.Mkdir(ctx, b.fs2, s)
+				}
+			}
 		}
 	}
 
@@ -276,6 +310,21 @@ func (b *bisyncRun) applyDeltas(ctx context.Context, ds1, ds2 *deltaSet) (change
 		if err != nil {
 			return
 		}
+
+		//propagate deletions of empty dirs from path2 to path1 (if --create-empty-src-dirs)
+		if b.opt.CreateEmptySrcDirs && !b.opt.Resync {
+			for _, s := range delete1.ToList() {
+				_, objerr := b.fs1.NewObject(ctx, s)
+				if objerr == fs.ErrorIsDir {
+					//before we delete, let's just make sure it still doesn't exist on the other side
+					_, objerr := b.fs2.NewObject(ctx, s)
+					if objerr == fs.ErrorObjectNotFound {
+						//note: we need to use Rmdirs instead of Rmdir because directories will fail to delete if they have other empty dirs inside of them.
+						operations.Rmdirs(ctx, b.fs1, s, false)
+					}
+				}
+			}
+		}
 	}
 
 	if delete2.NotEmpty() {
@@ -284,6 +333,21 @@ func (b *bisyncRun) applyDeltas(ctx context.Context, ds1, ds2 *deltaSet) (change
 		err = b.fastDelete(ctx, b.fs2, delete2, "delete2")
 		if err != nil {
 			return
+		}
+
+		//propagate deletions of empty dirs from path1 to path2 (if --create-empty-src-dirs)
+		if b.opt.CreateEmptySrcDirs && !b.opt.Resync {
+			for _, s := range delete2.ToList() {
+				_, objerr := b.fs2.NewObject(ctx, s)
+				if objerr == fs.ErrorIsDir {
+					//before we delete, let's just make sure it still doesn't exist on the other side
+					_, objerr := b.fs1.NewObject(ctx, s)
+					if objerr == fs.ErrorObjectNotFound {
+						//note: we need to use Rmdirs instead of Rmdir because directories will fail to delete if they have other empty dirs inside of them.
+						operations.Rmdirs(ctx, b.fs2, s, false)
+					}
+				}
+			}
 		}
 	}
 

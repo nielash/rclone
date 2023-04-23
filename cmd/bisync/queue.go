@@ -23,7 +23,7 @@ func (b *bisyncRun) fastCopy(ctx context.Context, fsrc, fdst fs.Fs, files bilib.
 		}
 	}
 
-	return sync.CopyDir(ctxCopy, fdst, fsrc, false)
+	return sync.CopyDir(ctxCopy, fdst, fsrc, b.opt.CreateEmptySrcDirs)
 }
 
 func (b *bisyncRun) fastDelete(ctx context.Context, f fs.Fs, files bilib.Names, queueName string) error {
@@ -32,7 +32,14 @@ func (b *bisyncRun) fastDelete(ctx context.Context, f fs.Fs, files bilib.Names, 
 	}
 
 	transfers := fs.GetConfig(ctx).Transfers
-	ctxRun := b.opt.setDryRun(ctx)
+
+	ctxRun, filterDelete := filter.AddConfig(b.opt.setDryRun(ctx))
+
+	for _, file := range files.ToList() {
+		if err := filterDelete.AddFile(file); err != nil {
+			return err
+		}
+	}
 
 	objChan := make(fs.ObjectsChan, transfers)
 	errChan := make(chan error, 1)
