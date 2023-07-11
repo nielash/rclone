@@ -44,7 +44,7 @@ INFO  : - Path1    File is new                         - subdir_with_ࢺ_/file_w
 INFO  : - Path1    File is new                         - subdir_with_ࢺ_/filechangedbothpaths_ࢺ_.txt
 INFO  : - Path1    File is new                         - subdir_with_ࢺ_/mañana_funcionará.txt
 INFO  : - Path1    File is new                         - subdir_with_ࢺ_/test.txt
-INFO  : - Path1    File was deleted                    - Русский.txt
+INFO  : - Path1    File was deleted                    - Русский.txt
 INFO  : Path1:    7 changes:    6 new,    0 newer,    0 older,    1 deleted
 INFO  : Path2 checking for diffs
 INFO  : - Path2    File is new                         - "subdir_rawchars_␙_\x81_\xfe/file3_␙_\x81_\xfe"
@@ -52,10 +52,10 @@ INFO  : - Path2    File is new                         - New_top_level_mañana_f
 INFO  : - Path2    File is new                         - subdir with␊white space.txt/file2 with␊white space.txt
 INFO  : - Path2    File is new                         - subdir_with_ࢺ_/filechangedbothpaths_ࢺ_.txt
 INFO  : - Path2    File is new                         - subdir_with_ࢺ_/filename_contains_ࢺ_p2s.txt
-INFO  : - Path2    File is newer                       - file_enconde_mañana_funcionará.txt
-INFO  : - Path2    File is newer                       - Русский.txt
+INFO  : - Path2    File is newer                       - file_enconde_mañana_funcionará.txt
+INFO  : - Path2    File is newer                       - Русский.txt
 INFO  : - Path2    File was deleted                    - filename_contains_ࢺ_.txt
-INFO  : - Path2    File was deleted                    - subdir_with_ࢺ_/filename_contains_ě_.txt
+INFO  : - Path2    File was deleted                    - subdir_with_ࢺ_/filename_contains_ě_.txt
 INFO  : Path2:    9 changes:    5 new,    2 newer,    0 older,    2 deleted
 INFO  : Applying changes
 INFO  : - Path1    Queue copy to Path2                 - {path2/}file1_with white space.txt
@@ -68,13 +68,13 @@ NOTICE: - Path2    Renaming Path2 copy                 - {path2/}subdir_with_ࢺ
 NOTICE: - Path2    Queue copy to Path1                 - {path1/}subdir_with_ࢺ_/filechangedbothpaths_ࢺ_.txt..path2
 INFO  : - Path1    Queue copy to Path2                 - {path2/}subdir_with_ࢺ_/mañana_funcionará.txt
 INFO  : - Path1    Queue copy to Path2                 - {path2/}subdir_with_ࢺ_/test.txt
-INFO  : - Path2    Queue copy to Path1                 - {path1/}Русский.txt
+INFO  : - Path2    Queue copy to Path1                 - {path1/}Русский.txt
 INFO  : - Path2    Queue copy to Path1                 - {path1/}New_top_level_mañana_funcionará.txt
-INFO  : - Path2    Queue copy to Path1                 - {path1/}file_enconde_mañana_funcionará.txt
+INFO  : - Path2    Queue copy to Path1                 - {path1/}file_enconde_mañana_funcionará.txt
 INFO  : - Path1    Queue delete                        - {path1/}filename_contains_ࢺ_.txt
 INFO  : - Path2    Queue copy to Path1                 - {path1/}subdir with␊white space.txt/file2 with␊white space.txt
 INFO  : - Path2    Queue copy to Path1                 - "{path1/}subdir_rawchars_␙_\x81_\xfe/file3_␙_\x81_\xfe"
-INFO  : - Path1    Queue delete                        - {path1/}subdir_with_ࢺ_/filename_contains_ě_.txt
+INFO  : - Path1    Queue delete                        - {path1/}subdir_with_ࢺ_/filename_contains_ě_.txt
 INFO  : - Path2    Queue copy to Path1                 - {path1/}subdir_with_ࢺ_/filename_contains_ࢺ_p2s.txt
 INFO  : - Path2    Do queued copies to                 - Path1
 INFO  : - Path1    Do queued copies to                 - Path2
