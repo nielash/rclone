@@ -15,7 +15,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jlaffaye/ftp"
+	"github.com/rclone/ftp"
 	"github.com/rclone/rclone/fs"
 	"github.com/rclone/rclone/fs/accounting"
 	"github.com/rclone/rclone/fs/config"
@@ -48,13 +48,15 @@ func init() {
 		Description: "FTP",
 		NewFs:       NewFs,
 		Options: []fs.Option{{
-			Name:     "host",
-			Help:     "FTP host to connect to.\n\nE.g. \"ftp.example.com\".",
-			Required: true,
+			Name:      "host",
+			Help:      "FTP host to connect to.\n\nE.g. \"ftp.example.com\".",
+			Required:  true,
+			Sensitive: true,
 		}, {
-			Name:    "user",
-			Help:    "FTP username.",
-			Default: currentUser,
+			Name:      "user",
+			Help:      "FTP username.",
+			Default:   currentUser,
+			Sensitive: true,
 		}, {
 			Name:    "port",
 			Help:    "FTP port number.",
@@ -580,6 +582,7 @@ func NewFs(ctx context.Context, name, root string, m configmap.Mapper) (ff fs.Fs
 	}
 	f.features = (&fs.Features{
 		CanHaveEmptyDirectories: true,
+		PartialUploads:          true,
 	}).Fill(ctx, f)
 	// set the pool drainer timer going
 	if f.opt.IdleTimeout > 0 {
@@ -691,6 +694,12 @@ func (f *Fs) findItem(ctx context.Context, remote string) (entry *ftp.Entry, err
 			err = translateErrorFile(err)
 			if err == fs.ErrorObjectNotFound {
 				return nil, nil
+			}
+			if errX := textprotoError(err); errX != nil {
+				switch errX.Code {
+				case ftp.StatusBadArguments:
+					err = nil
+				}
 			}
 			return nil, err
 		}
@@ -1098,7 +1107,7 @@ func (o *Object) ModTime(ctx context.Context) time.Time {
 // SetModTime sets the modification time of the object
 func (o *Object) SetModTime(ctx context.Context, modTime time.Time) error {
 	if !o.fs.fSetTime {
-		fs.Errorf(o.fs, "SetModTime is not supported")
+		fs.Debugf(o.fs, "SetModTime is not supported")
 		return nil
 	}
 	c, err := o.fs.getFtpConnection(ctx)

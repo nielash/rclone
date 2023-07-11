@@ -131,10 +131,11 @@ Note that the chunks will be buffered into memory.`,
 			Default:  defaultChunkSize,
 			Advanced: true,
 		}, {
-			Name:     "drive_id",
-			Help:     "The ID of the drive to use.",
-			Default:  "",
-			Advanced: true,
+			Name:      "drive_id",
+			Help:      "The ID of the drive to use.",
+			Default:   "",
+			Advanced:  true,
+			Sensitive: true,
 		}, {
 			Name:     "drive_type",
 			Help:     "The type of the drive (" + driveTypePersonal + " | " + driveTypeBusiness + " | " + driveTypeSharepoint + ").",
@@ -148,7 +149,8 @@ This isn't normally needed, but in special circumstances you might
 know the folder ID that you wish to access but not be able to get
 there through a path traversal.
 `,
-			Advanced: true,
+			Advanced:  true,
+			Sensitive: true,
 		}, {
 			Name: "access_scopes",
 			Help: `Set scopes to be requested by rclone.
@@ -196,7 +198,9 @@ listing, set this option.`,
 		}, {
 			Name:    "server_side_across_configs",
 			Default: false,
-			Help: `Allow server-side operations (e.g. copy) to work across different onedrive configs.
+			Help: `Deprecated: use --server-side-across-configs instead.
+
+Allow server-side operations (e.g. copy) to work across different onedrive configs.
 
 This will only work if you are copying between two OneDrive *Personal* drives AND
 the files to copy are already shared between them.  In other cases, rclone will
@@ -258,7 +262,8 @@ this flag there.
 
 At the time of writing this only works with OneDrive personal paid accounts.
 `,
-			Advanced: true,
+			Advanced:  true,
+			Sensitive: true,
 		}, {
 			Name:    "hash_type",
 			Default: "auto",
@@ -300,6 +305,24 @@ rclone.
 				Value: "none",
 				Help:  "None - don't use any hashes",
 			}},
+			Advanced: true,
+		}, {
+			Name:    "av_override",
+			Default: false,
+			Help: `Allows download of files the server thinks has a virus.
+
+The onedrive/sharepoint server may check files uploaded with an Anti
+Virus checker. If it detects any potential viruses or malware it will
+block download of the file.
+
+In this case you will see a message like this
+
+    server reports this file is infected with a virus - use --onedrive-av-override to download anyway: Infected (name of virus): 403 Forbidden: 
+
+If you are 100% sure you want to download this file anyway then use
+the --onedrive-av-override flag, or av_override = true in the config
+file.
+`,
 			Advanced: true,
 		}, {
 			Name:     config.ConfigEncoding,
@@ -640,6 +663,7 @@ type Options struct {
 	LinkType                string               `config:"link_type"`
 	LinkPassword            string               `config:"link_password"`
 	HashType                string               `config:"hash_type"`
+	AVOverride              bool                 `config:"av_override"`
 	Enc                     encoder.MultiEncoder `config:"encoding"`
 }
 
@@ -1966,12 +1990,20 @@ func (o *Object) Open(ctx context.Context, options ...fs.OpenOption) (in io.Read
 	var resp *http.Response
 	opts := o.fs.newOptsCall(o.id, "GET", "/content")
 	opts.Options = options
+	if o.fs.opt.AVOverride {
+		opts.Parameters = url.Values{"AVOverride": {"1"}}
+	}
 
 	err = o.fs.pacer.Call(func() (bool, error) {
 		resp, err = o.fs.srv.Call(ctx, &opts)
 		return shouldRetry(ctx, resp, err)
 	})
 	if err != nil {
+		if resp != nil {
+			if virus := resp.Header.Get("X-Virus-Infected"); virus != "" {
+				err = fmt.Errorf("server reports this file is infected with a virus - use --onedrive-av-override to download anyway: %s: %w", virus, err)
+			}
+		}
 		return nil, err
 	}
 

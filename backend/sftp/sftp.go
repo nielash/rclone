@@ -59,13 +59,15 @@ func init() {
 		Description: "SSH/SFTP",
 		NewFs:       NewFs,
 		Options: []fs.Option{{
-			Name:     "host",
-			Help:     "SSH host to connect to.\n\nE.g. \"example.com\".",
-			Required: true,
+			Name:      "host",
+			Help:      "SSH host to connect to.\n\nE.g. \"example.com\".",
+			Required:  true,
+			Sensitive: true,
 		}, {
-			Name:    "user",
-			Help:    "SSH username.",
-			Default: currentUser,
+			Name:      "user",
+			Help:      "SSH username.",
+			Default:   currentUser,
+			Sensitive: true,
 		}, {
 			Name:    "port",
 			Help:    "SSH port number.",
@@ -75,8 +77,9 @@ func init() {
 			Help:       "SSH password, leave blank to use ssh-agent.",
 			IsPassword: true,
 		}, {
-			Name: "key_pem",
-			Help: "Raw PEM-encoded private key.\n\nIf specified, will override key_file parameter.",
+			Name:      "key_pem",
+			Help:      "Raw PEM-encoded private key.\n\nIf specified, will override key_file parameter.",
+			Sensitive: true,
 		}, {
 			Name: "key_file",
 			Help: "Path to PEM-encoded private key file.\n\nLeave blank or set key-use-agent to use ssh-agent." + env.ShellExpandHelp,
@@ -87,6 +90,7 @@ func init() {
 Only PEM encrypted key files (old OpenSSH format) are supported. Encrypted keys
 in the new OpenSSH format can't be used.`,
 			IsPassword: true,
+			Sensitive:  true,
 		}, {
 			Name: "pubkey_file",
 			Help: `Optional path to public key file.
@@ -994,6 +998,7 @@ func NewFsWithConnection(ctx context.Context, f *Fs, name string, root string, m
 	f.features = (&fs.Features{
 		CanHaveEmptyDirectories: true,
 		SlowHash:                true,
+		PartialUploads:          true,
 	}).Fill(ctx, f)
 	// Make a connection and pool it to return errors early
 	c, err := f.getSftpConnection(ctx)
@@ -1065,7 +1070,7 @@ func NewFsWithConnection(ctx context.Context, f *Fs, name string, root string, m
 		}
 	}
 	f.putSftpConnection(&c, err)
-	if root != "" {
+	if root != "" && !strings.HasSuffix(root, "/") {
 		// Check to see if the root is actually an existing file,
 		// and if so change the filesystem root to its parent directory.
 		oldAbsRoot := f.absRoot
@@ -1168,13 +1173,6 @@ func (f *Fs) dirExists(ctx context.Context, dir string) (bool, error) {
 // found.
 func (f *Fs) List(ctx context.Context, dir string) (entries fs.DirEntries, err error) {
 	root := path.Join(f.absRoot, dir)
-	ok, err := f.dirExists(ctx, root)
-	if err != nil {
-		return nil, fmt.Errorf("List failed: %w", err)
-	}
-	if !ok {
-		return nil, fs.ErrorDirNotFound
-	}
 	sftpDir := root
 	if sftpDir == "" {
 		sftpDir = "."
@@ -1186,6 +1184,9 @@ func (f *Fs) List(ctx context.Context, dir string) (entries fs.DirEntries, err e
 	infos, err := c.sftpClient.ReadDir(sftpDir)
 	f.putSftpConnection(&c, err)
 	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, fs.ErrorDirNotFound
+		}
 		return nil, fmt.Errorf("error listing %q: %w", dir, err)
 	}
 	for _, info := range infos {
@@ -1329,10 +1330,17 @@ func (f *Fs) Move(ctx context.Context, src fs.Object, remote string) (fs.Object,
 	if err != nil {
 		return nil, fmt.Errorf("Move: %w", err)
 	}
-	err = c.sftpClient.Rename(
-		srcObj.path(),
-		path.Join(f.absRoot, remote),
-	)
+	srcPath, dstPath := srcObj.path(), path.Join(f.absRoot, remote)
+	if _, ok := c.sftpClient.HasExtension("posix-rename@openssh.com"); ok {
+		err = c.sftpClient.PosixRename(srcPath, dstPath)
+	} else {
+		// If haven't got PosixRename then remove source first before renaming
+		err = c.sftpClient.Remove(dstPath)
+		if err != nil && !errors.Is(err, iofs.ErrNotExist) {
+			fs.Errorf(f, "Move: Failed to remove existing file %q: %v", dstPath, err)
+		}
+		err = c.sftpClient.Rename(srcPath, dstPath)
+	}
 	f.putSftpConnection(&c, err)
 	if err != nil {
 		return nil, fmt.Errorf("Move Rename failed: %w", err)

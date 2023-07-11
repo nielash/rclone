@@ -96,15 +96,17 @@ func init() {
 				Help:  "Other site/service or software",
 			}},
 		}, {
-			Name: "user",
-			Help: "User name.\n\nIn case NTLM authentication is used, the username should be in the format 'Domain\\User'.",
+			Name:      "user",
+			Help:      "User name.\n\nIn case NTLM authentication is used, the username should be in the format 'Domain\\User'.",
+			Sensitive: true,
 		}, {
 			Name:       "pass",
 			Help:       "Password.",
 			IsPassword: true,
 		}, {
-			Name: "bearer_token",
-			Help: "Bearer token instead of user/pass (e.g. a Macaroon).",
+			Name:      "bearer_token",
+			Help:      "Bearer token instead of user/pass (e.g. a Macaroon).",
+			Sensitive: true,
 		}, {
 			Name:     "bearer_token_command",
 			Help:     "Command to run to get a bearer token.",
@@ -175,6 +177,7 @@ type Fs struct {
 	precision          time.Duration // mod time precision
 	canStream          bool          // set if can stream
 	useOCMtime         bool          // set if can use X-OC-Mtime
+	propsetMtime       bool          // set if can use propset
 	retryWithZeroDepth bool          // some vendors (sharepoint) won't list files when Depth is 1 (our default)
 	checkBeforePurge   bool          // enables extra check that directory to purge really exists
 	hasOCMD5           bool          // set if can use owncloud style checksums for MD5
@@ -568,7 +571,8 @@ func (f *Fs) fetchAndSetBearerToken() error {
 	return nil
 }
 
-var validateNextCloudChunkedURL = regexp.MustCompile(`^.*/dav/files/[^/]+/?$`)
+// The WebDAV url can optionally be suffixed with a path. This suffix needs to be ignored for determining the temporary upload directory of chunks.
+var nextCloudURLRegex = regexp.MustCompile(`^(.*)/dav/files/([^/]+)`)
 
 // setQuirks adjusts the Fs for the vendor passed in
 func (f *Fs) setQuirks(ctx context.Context, vendor string) error {
@@ -582,18 +586,27 @@ func (f *Fs) setQuirks(ctx context.Context, vendor string) error {
 		f.canStream = true
 		f.precision = time.Second
 		f.useOCMtime = true
+		f.propsetMtime = true
 		f.hasOCMD5 = true
 		f.hasOCSHA1 = true
 	case "nextcloud":
 		f.precision = time.Second
 		f.useOCMtime = true
+		f.propsetMtime = true
 		f.hasOCSHA1 = true
 		f.canChunk = true
-		if err := f.verifyChunkConfig(); err != nil {
-			return err
+
+		if f.opt.ChunkSize == 0 {
+			fs.Logf(nil, "Chunked uploads are disabled because nextcloud_chunk_size is set to 0")
+		} else {
+			chunksUploadURL, err := f.getChunksUploadURL()
+			if err != nil {
+				return err
+			}
+
+			f.chunksUploadURL = chunksUploadURL
+			fs.Logf(nil, "Chunks temporary upload directory: %s", f.chunksUploadURL)
 		}
-		f.chunksUploadURL = f.getChunksUploadURL()
-		fs.Logf(nil, "Chunks temporary upload directory: %s", f.chunksUploadURL)
 	case "sharepoint":
 		// To mount sharepoint, two Cookies are required
 		// They have to be set instead of BasicAuth
@@ -1047,7 +1060,7 @@ func (f *Fs) copyOrMove(ctx context.Context, src fs.Object, remote string, metho
 		NoResponse: true,
 		ExtraHeaders: map[string]string{
 			"Destination": destinationURL.String(),
-			"Overwrite":   "F",
+			"Overwrite":   "T",
 		},
 	}
 	if f.useOCMtime {
@@ -1064,6 +1077,13 @@ func (f *Fs) copyOrMove(ctx context.Context, src fs.Object, remote string, metho
 	dstObj, err := f.NewObject(ctx, remote)
 	if err != nil {
 		return nil, fmt.Errorf("copy NewObject failed: %w", err)
+	}
+	if f.useOCMtime && resp.Header.Get("X-OC-Mtime") != "accepted" && f.propsetMtime {
+		fs.Debugf(dstObj, "Setting modtime after copy to %v", src.ModTime(ctx))
+		err = dstObj.SetModTime(ctx, src.ModTime(ctx))
+		if err != nil {
+			return nil, fmt.Errorf("failed to set modtime: %w", err)
+		}
 	}
 	return dstObj, nil
 }
@@ -1147,7 +1167,7 @@ func (f *Fs) DirMove(ctx context.Context, src fs.Fs, srcRemote, dstRemote string
 		NoResponse: true,
 		ExtraHeaders: map[string]string{
 			"Destination": addSlash(destinationURL.String()),
-			"Overwrite":   "F",
+			"Overwrite":   "T",
 		},
 	}
 	// Direct the MOVE/COPY to the source server
@@ -1299,8 +1319,53 @@ func (o *Object) ModTime(ctx context.Context) time.Time {
 	return o.modTime
 }
 
+// Set modified time using propset
+//
+// <d:multistatus xmlns:d="DAV:" xmlns:s="http://sabredav.org/ns"><d:response><d:href>/ocm/remote.php/webdav/office/wir.jpg</d:href><d:propstat><d:prop><d:lastmodified/></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response></d:multistatus>
+var owncloudPropset = `<?xml version="1.0" encoding="utf-8" ?>
+<D:propertyupdate xmlns:D="DAV:">
+ <D:set>
+  <D:prop>
+   <lastmodified xmlns="DAV:">%d</lastmodified>
+  </D:prop>
+ </D:set>
+</D:propertyupdate>
+`
+
 // SetModTime sets the modification time of the local fs object
 func (o *Object) SetModTime(ctx context.Context, modTime time.Time) error {
+	if o.fs.propsetMtime {
+		opts := rest.Opts{
+			Method:     "PROPPATCH",
+			Path:       o.filePath(),
+			NoRedirect: true,
+			Body:       strings.NewReader(fmt.Sprintf(owncloudPropset, modTime.Unix())),
+		}
+		var result api.Multistatus
+		var resp *http.Response
+		var err error
+		err = o.fs.pacer.Call(func() (bool, error) {
+			resp, err = o.fs.srv.CallXML(ctx, &opts, nil, &result)
+			return o.fs.shouldRetry(ctx, resp, err)
+		})
+		if err != nil {
+			if apiErr, ok := err.(*api.Error); ok {
+				// does not exist
+				if apiErr.StatusCode == http.StatusNotFound {
+					return fs.ErrorObjectNotFound
+				}
+			}
+			return fmt.Errorf("couldn't set modified time: %w", err)
+		}
+		// FIXME check if response is valid
+		if len(result.Responses) == 1 && result.Responses[0].Props.StatusOK() {
+			// update cached modtime
+			o.modTime = modTime
+			return nil
+		}
+		// fallback
+		return fs.ErrorCantSetModTime
+	}
 	return fs.ErrorCantSetModTime
 }
 
