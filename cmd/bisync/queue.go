@@ -3,6 +3,7 @@ package bisync
 import (
 	"context"
 	"fmt"
+	"sort"
 
 	"github.com/rclone/rclone/cmd/bisync/bilib"
 	"github.com/rclone/rclone/fs"
@@ -63,7 +64,14 @@ func (b *bisyncRun) fastDelete(ctx context.Context, f fs.Fs, files bilib.Names, 
 // operation should be "make" or "remove"
 func (b *bisyncRun) syncEmptyDirs(ctx context.Context, dst fs.Fs, candidates bilib.Names, dirsList *fileList, operation string) {
 	if b.opt.CreateEmptySrcDirs && (!b.opt.Resync || operation == "make") {
-		for _, s := range candidates.ToList() {
+
+		candidatesList := candidates.ToList()
+		if operation == "remove" {
+			// reverse the sort order to ensure we remove subdirs before parent dirs
+			sort.Sort(sort.Reverse(sort.StringSlice(candidatesList)))
+		}
+
+		for _, s := range candidatesList {
 			var direrr error
 			if dirsList.has(s) { //make sure it's a dir, not a file
 				if operation == "remove" {
