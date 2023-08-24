@@ -12,6 +12,7 @@ import (
 	"strconv"
 	gosync "sync"
 
+	"github.com/rclone/rclone/backend/drive"
 	"github.com/rclone/rclone/cmd/bisync/bilib"
 	"github.com/rclone/rclone/fs"
 	"github.com/rclone/rclone/fs/filter"
@@ -73,6 +74,27 @@ func Bisync(ctx context.Context, fs1, fs2 fs.Fs, optArg *Options) (err error) {
 		}
 		if fs2.Precision() == fs.ModTimeNotSupported {
 			return errors.New("modification time support is missing on path2")
+		}
+	}
+
+	// Google Docs warnings
+	driveFs1, isDrive1 := fs1.(*drive.Fs)
+	driveFs2, isDrive2 := fs1.(*drive.Fs)
+	ci := fs.GetConfig(ctx)
+	if (isDrive1 || isDrive2) && (ci.CheckSum || ci.SizeOnly) {
+		needGdocsWarning := false
+		if isDrive1 {
+			if !driveFs1.Options().SkipGdocs {
+				needGdocsWarning = true
+			}
+		}
+		if isDrive2 {
+			if !driveFs2.Options().SkipGdocs {
+				needGdocsWarning = true
+			}
+		}
+		if needGdocsWarning {
+			fs.Logf(nil, Color(terminal.YellowFg, "Google Docs do not sync reliably with --checksum or --size-only, because they do not have checksums or sizes. Consider using modtime instead (the default) or --drive-skip-gdocs"))
 		}
 	}
 
@@ -439,8 +461,7 @@ func (b *bisyncRun) resync(octx, fctx context.Context) error {
 	// fctx has our extra filters added!
 	ctxSync, filterSync := filter.AddConfig(ctxRun)
 	if filterSync.Opt.MinSize == -1 {
-		// prevent overwriting Google Doc files (their size is -1)
-		filterSync.Opt.MinSize = 0
+		fs.Debugf(nil, "filterSync.Opt.MinSize: %v", filterSync.Opt.MinSize)
 	}
 	ci := fs.GetConfig(ctxSync)
 	ci.IgnoreExisting = true

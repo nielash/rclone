@@ -870,6 +870,11 @@ func (f *Fs) getFile(ctx context.Context, ID string, fields googleapi.Field) (in
 	return info, err
 }
 
+// Options returns remote-specific options for reference by commands
+func (f *Fs) Options() *Options {
+	return &f.opt
+}
+
 // getRootID returns the canonical ID for the "root" ID
 func (f *Fs) getRootID(ctx context.Context) (string, error) {
 	info, err := f.getFile(ctx, "root", "id")
