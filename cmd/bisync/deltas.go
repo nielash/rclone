@@ -274,6 +274,7 @@ func (b *bisyncRun) applyDeltas(ctx context.Context, ds1, ds2 *deltaSet) (change
 
 	//if there are potential conflicts to check, check them all here (outside the loop) in one fell swoop
 	matches, err := b.checkconflicts(ctxCheck, filterCheck, b.fs1, b.fs2)
+	results := new(bytes.Buffer)
 
 	for _, file := range ds1.sort() {
 		p1 := path1 + file
@@ -302,7 +303,7 @@ func (b *bisyncRun) applyDeltas(ctx context.Context, ds1, ds2 *deltaSet) (change
 					} else {
 						fs.Debugf(nil, "Files are NOT equal: %s", file)
 						b.indent("!Path1", p1+"..path1", "Renaming Path1 copy")
-						if err = operations.MoveFile(ctxMove, b.fs1, b.fs1, file+"..path1", file); err != nil {
+						if err = operations.MoveFile(ctxMove, b.fs1, b.fs1, file+"..path1", file, results); err != nil {
 							err = fmt.Errorf("path1 rename failed for %s: %w", p1, err)
 							b.critical = true
 							return
@@ -311,10 +312,12 @@ func (b *bisyncRun) applyDeltas(ctx context.Context, ds1, ds2 *deltaSet) (change
 						copy1to2.Add(file + "..path1")
 
 						b.indent("!Path2", p2+"..path2", "Renaming Path2 copy")
-						if err = operations.MoveFile(ctxMove, b.fs2, b.fs2, file+"..path2", file); err != nil {
+						if err = operations.MoveFile(ctxMove, b.fs2, b.fs2, file+"..path2", file, results); err != nil {
 							err = fmt.Errorf("path2 rename failed for %s: %w", file, err)
 							return
 						}
+						getResults := getResults(results)
+						fs.Debugf(nil, "Got %v results for %v", len(getResults), "rename Path1/Path2") // TODO: use the results!
 						b.indent("!Path2", p1+"..path2", "Queue copy to Path1")
 						copy2to1.Add(file + "..path2")
 					}

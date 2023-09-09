@@ -275,6 +275,7 @@ func equal(ctx context.Context, src fs.ObjectInfo, dst fs.Object, opt equalOpt) 
 				fs.Errorf(dst, "Failed to set modification time: %v", err)
 			} else {
 				fs.Infof(src, "Updated modification time in destination")
+				// TODO: probably need WriteResults() here since modtime changed
 			}
 		}
 	}
@@ -333,7 +334,7 @@ func CommonHash(ctx context.Context, fa, fb fs.Info) (hash.Type, *fs.HashesOptio
 //
 // It returns the destination object if possible.  Note that this may
 // be nil.
-func Copy(ctx context.Context, f fs.Fs, dst fs.Object, remote string, src fs.Object) (newDst fs.Object, err error) {
+func Copy(ctx context.Context, f fs.Fs, dst fs.Object, remote string, src fs.Object, results ...io.Writer) (newDst fs.Object, err error) {
 	ci := fs.GetConfig(ctx)
 	tr := accounting.Stats(ctx).NewTransfer(src)
 	defer func() {
@@ -566,7 +567,66 @@ func Copy(ctx context.Context, f fs.Fs, dst fs.Object, remote string, src fs.Obj
 		actionTaken = fmt.Sprintf("%s to: %s", actionTaken, newDst.String())
 	}
 	fs.Infof(src, "%s%s", actionTaken, fs.LogValueHide("size", fs.SizeSuffix(src.Size())))
+	WriteResults(ctx, results, newDst, "", "copy", err)
 	return newDst, err
+}
+
+// WriteResults writes the results to io.Writer in JSON format.
+// Mainly used by Bisync.
+func WriteResults(ctx context.Context, results []io.Writer, objDst fs.Object, dirDst string, action string, err error) {
+
+	if ResultsIfAny(results) == nil {
+		return
+	}
+
+	type Results struct {
+		Name       string
+		Size       int64
+		Modtime    time.Time
+		ModtimeStr string
+		Hash       string
+		Flags      string
+		Action     string
+		Err        error
+	}
+
+	timeFormat := "2006-01-02T15:04:05.000000000-0700"
+
+	result := Results{
+		Action: action,
+		Err:    err,
+	}
+
+	// detect file or dir
+	if dirDst != "" {
+		// it's a dir
+		result.Name = dirDst
+		result.Flags = "d"
+	} else {
+		// it's a file
+		result.Name = objDst.Remote()
+		result.Flags = "-"
+		result.Size = objDst.Size()
+		result.Modtime = objDst.ModTime(ctx).In(time.UTC)
+		result.ModtimeStr = objDst.ModTime(ctx).In(time.UTC).Format(timeFormat)
+		result.Hash, _ = objDst.Hash(ctx, objDst.Fs().Hashes().GetOne())
+		// TODO: try to use hash/modtime we already have before fetching a new one
+		// TODO: respect --ignore-checksum and --ignore-listing-checksum
+	}
+
+	fs.Debugf(nil, "writing result: %v", result)
+	json.NewEncoder(ResultsIfAny(results)).Encode(result)
+}
+
+// ResultsIfAny returns the first io.Writer in the slice, or nil if none.
+// We're using variadic trailing arguments for results mainly to avoid affecting the
+// many other commands/backends that already use these functions.
+func ResultsIfAny(results []io.Writer) io.Writer {
+	if len(results) == 0 {
+		fs.Debugf(nil, "NOTICE: 'results' io.Writer is nil; results will not be written.")
+		return nil
+	}
+	return results[0]
 }
 
 // SameObject returns true if src and dst could be pointing to the
@@ -604,7 +664,7 @@ func SameObject(src, dst fs.Object) bool {
 //
 // It returns the destination object if possible.  Note that this may
 // be nil.
-func Move(ctx context.Context, fdst fs.Fs, dst fs.Object, remote string, src fs.Object) (newDst fs.Object, err error) {
+func Move(ctx context.Context, fdst fs.Fs, dst fs.Object, remote string, src fs.Object, results ...io.Writer) (newDst fs.Object, err error) {
 	ci := fs.GetConfig(ctx)
 	tr := accounting.Stats(ctx).NewCheckingTransfer(src, "moving")
 	defer func() {
@@ -623,7 +683,7 @@ func Move(ctx context.Context, fdst fs.Fs, dst fs.Object, remote string, src fs.
 	if doMove := fdst.Features().Move; doMove != nil && (SameConfig(src.Fs(), fdst) || (SameRemoteType(src.Fs(), fdst) && (fdst.Features().ServerSideAcrossConfigs || ci.ServerSideAcrossConfigs))) {
 		// Delete destination if it exists and is not the same file as src (could be same file while seemingly different if the remote is case insensitive)
 		if dst != nil && !SameObject(src, dst) {
-			err = DeleteFile(ctx, dst)
+			err = DeleteFile(ctx, dst, ResultsIfAny(results))
 			if err != nil {
 				return newDst, err
 			}
@@ -636,8 +696,10 @@ func Move(ctx context.Context, fdst fs.Fs, dst fs.Object, remote string, src fs.
 		case nil:
 			if newDst != nil && src.String() != newDst.String() {
 				fs.Infof(src, "Moved (server-side) to: %s", newDst.String())
+				WriteResults(ctx, results, newDst, "", "move", err)
 			} else {
 				fs.Infof(src, "Moved (server-side)")
+				WriteResults(ctx, results, src, "", "move", err) // TODO: recheck later -- is it ok that we're using src instead of dst?
 			}
 			in.ServerSideMoveEnd(newDst.Size()) // account the bytes for the server-side transfer
 			_ = in.Close()
@@ -708,7 +770,7 @@ func SuffixName(ctx context.Context, remote string) string {
 //
 // If backupDir is set then it moves the file to there instead of
 // deleting
-func DeleteFileWithBackupDir(ctx context.Context, dst fs.Object, backupDir fs.Fs) (err error) {
+func DeleteFileWithBackupDir(ctx context.Context, dst fs.Object, backupDir fs.Fs, results ...io.Writer) (err error) {
 	tr := accounting.Stats(ctx).NewCheckingTransfer(dst, "deleting")
 	defer func() {
 		tr.Done(ctx, err)
@@ -734,6 +796,7 @@ func DeleteFileWithBackupDir(ctx context.Context, dst fs.Object, backupDir fs.Fs
 		err = fs.CountError(err)
 	} else if !skip {
 		fs.Infof(dst, actioned)
+		WriteResults(ctx, results, dst, "", "delete", err)
 	}
 	return err
 }
@@ -742,8 +805,8 @@ func DeleteFileWithBackupDir(ctx context.Context, dst fs.Object, backupDir fs.Fs
 //
 // If useBackupDir is set and --backup-dir is in effect then it moves
 // the file to there instead of deleting
-func DeleteFile(ctx context.Context, dst fs.Object) (err error) {
-	return DeleteFileWithBackupDir(ctx, dst, nil)
+func DeleteFile(ctx context.Context, dst fs.Object, results ...io.Writer) (err error) {
+	return DeleteFileWithBackupDir(ctx, dst, nil, ResultsIfAny(results))
 }
 
 // DeleteFilesWithBackupDir removes all the files passed in the
@@ -751,7 +814,7 @@ func DeleteFile(ctx context.Context, dst fs.Object) (err error) {
 //
 // If backupDir is set the files will be placed into that directory
 // instead of being deleted.
-func DeleteFilesWithBackupDir(ctx context.Context, toBeDeleted fs.ObjectsChan, backupDir fs.Fs) error {
+func DeleteFilesWithBackupDir(ctx context.Context, toBeDeleted fs.ObjectsChan, backupDir fs.Fs, results ...io.Writer) error {
 	var wg sync.WaitGroup
 	ci := fs.GetConfig(ctx)
 	wg.Add(ci.Checkers)
@@ -762,7 +825,7 @@ func DeleteFilesWithBackupDir(ctx context.Context, toBeDeleted fs.ObjectsChan, b
 		go func() {
 			defer wg.Done()
 			for dst := range toBeDeleted {
-				err := DeleteFileWithBackupDir(ctx, dst, backupDir)
+				err := DeleteFileWithBackupDir(ctx, dst, backupDir, ResultsIfAny(results))
 				if err != nil {
 					errorCount.Add(1)
 					if fserrors.IsFatalError(err) {
@@ -787,8 +850,8 @@ func DeleteFilesWithBackupDir(ctx context.Context, toBeDeleted fs.ObjectsChan, b
 }
 
 // DeleteFiles removes all the files passed in the channel
-func DeleteFiles(ctx context.Context, toBeDeleted fs.ObjectsChan) error {
-	return DeleteFilesWithBackupDir(ctx, toBeDeleted, nil)
+func DeleteFiles(ctx context.Context, toBeDeleted fs.ObjectsChan, results ...io.Writer) error {
+	return DeleteFilesWithBackupDir(ctx, toBeDeleted, nil, ResultsIfAny(results))
 }
 
 // SameRemoteType returns true if fdst and fsrc are the same type
@@ -1184,7 +1247,7 @@ func ListDir(ctx context.Context, f fs.Fs, w io.Writer) error {
 }
 
 // Mkdir makes a destination directory or container
-func Mkdir(ctx context.Context, f fs.Fs, dir string) error {
+func Mkdir(ctx context.Context, f fs.Fs, dir string, results ...io.Writer) error {
 	if SkipDestructive(ctx, fs.LogDirName(f, dir), "make directory") {
 		return nil
 	}
@@ -1194,18 +1257,21 @@ func Mkdir(ctx context.Context, f fs.Fs, dir string) error {
 		err = fs.CountError(err)
 		return err
 	}
+	WriteResults(ctx, results, nil, dir, "copy", err)
 	return nil
 }
 
 // TryRmdir removes a container but not if not empty.  It doesn't
 // count errors but may return one.
-func TryRmdir(ctx context.Context, f fs.Fs, dir string) error {
+func TryRmdir(ctx context.Context, f fs.Fs, dir string, results ...io.Writer) error {
 	accounting.Stats(ctx).DeletedDirs(1)
 	if SkipDestructive(ctx, fs.LogDirName(f, dir), "remove directory") {
 		return nil
 	}
 	fs.Infof(fs.LogDirName(f, dir), "Removing directory")
-	return f.Rmdir(ctx, dir)
+	err := f.Rmdir(ctx, dir)
+	WriteResults(ctx, results, nil, dir, "delete", err)
+	return err
 }
 
 // Rmdir removes a container but not if not empty
@@ -1500,7 +1566,7 @@ func PublicLink(ctx context.Context, f fs.Fs, remote string, expire fs.Duration,
 // containing empty directories) under f, including f.
 //
 // Rmdirs obeys the filters
-func Rmdirs(ctx context.Context, f fs.Fs, dir string, leaveRoot bool) error {
+func Rmdirs(ctx context.Context, f fs.Fs, dir string, leaveRoot bool, results ...io.Writer) error {
 	ci := fs.GetConfig(ctx)
 	fi := filter.GetConfig(ctx)
 	dirEmpty := make(map[string]bool)
@@ -1585,7 +1651,7 @@ func Rmdirs(ctx context.Context, f fs.Fs, dir string, leaveRoot bool) error {
 			}
 			dir := dir
 			g.Go(func() error {
-				err := TryRmdir(gCtx, f, dir)
+				err := TryRmdir(gCtx, f, dir, ResultsIfAny(results))
 				if err != nil {
 					err = fs.CountError(err)
 					fs.Errorf(dir, "Failed to rmdir: %v", err)
@@ -1955,7 +2021,7 @@ func MoveBackupDir(ctx context.Context, backupDir fs.Fs, dst fs.Object) (err err
 }
 
 // moveOrCopyFile moves or copies a single file possibly to a new name
-func moveOrCopyFile(ctx context.Context, fdst fs.Fs, fsrc fs.Fs, dstFileName string, srcFileName string, cp bool) (err error) {
+func moveOrCopyFile(ctx context.Context, fdst fs.Fs, fsrc fs.Fs, dstFileName string, srcFileName string, cp bool, results ...io.Writer) (err error) {
 	ci := fs.GetConfig(ctx)
 	dstFilePath := path.Join(fdst.Root(), dstFileName)
 	srcFilePath := path.Join(fsrc.Root(), srcFileName)
@@ -2053,13 +2119,13 @@ func moveOrCopyFile(ctx context.Context, fdst fs.Fs, fsrc fs.Fs, dstFileName str
 			dstObj = nil
 		}
 
-		_, err = Op(ctx, fdst, dstObj, dstFileName, srcObj)
+		_, err = Op(ctx, fdst, dstObj, dstFileName, srcObj, ResultsIfAny(results))
 	} else {
 		if !cp {
 			if ci.IgnoreExisting {
 				fs.Debugf(srcObj, "Not removing source file as destination file exists and --ignore-existing is set")
 			} else {
-				err = DeleteFile(ctx, srcObj)
+				err = DeleteFile(ctx, srcObj, ResultsIfAny(results))
 			}
 		}
 	}
@@ -2067,8 +2133,8 @@ func moveOrCopyFile(ctx context.Context, fdst fs.Fs, fsrc fs.Fs, dstFileName str
 }
 
 // MoveFile moves a single file possibly to a new name
-func MoveFile(ctx context.Context, fdst fs.Fs, fsrc fs.Fs, dstFileName string, srcFileName string) (err error) {
-	return moveOrCopyFile(ctx, fdst, fsrc, dstFileName, srcFileName, false)
+func MoveFile(ctx context.Context, fdst fs.Fs, fsrc fs.Fs, dstFileName string, srcFileName string, results ...io.Writer) (err error) {
+	return moveOrCopyFile(ctx, fdst, fsrc, dstFileName, srcFileName, false, ResultsIfAny(results))
 }
 
 // CopyFile moves a single file possibly to a new name

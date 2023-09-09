@@ -4,6 +4,7 @@
 package bisync
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -413,7 +414,8 @@ func (b *bisyncRun) resync(octx, fctx context.Context, listing1, listing2 string
 		// prevent overwriting Google Doc files (their size is -1)
 		filterSync.Opt.MinSize = 0
 	}
-	if err = sync.CopyDir(ctxSync, b.fs2, b.fs1, b.opt.CreateEmptySrcDirs); err != nil {
+	results := new(bytes.Buffer)
+	if err = sync.BisyncDir(ctxSync, b.fs2, b.fs1, b.opt.CreateEmptySrcDirs, results); err != nil {
 		b.critical = true
 		return err
 	}
@@ -439,6 +441,8 @@ func (b *bisyncRun) resync(octx, fctx context.Context, listing1, listing2 string
 			b.critical = true
 			return err
 		}
+		getResults := getResults(results)
+		fs.Debugf(nil, "Got %v results for %v", len(getResults), "Resync")
 	}
 
 	fs.Infof(nil, "Resync updating listings")
