@@ -3,8 +3,11 @@ package sync
 
 import (
 	"context"
+	"io"
+	"os"
 
 	"github.com/rclone/rclone/cmd"
+	"github.com/rclone/rclone/fs"
 	"github.com/rclone/rclone/fs/config/flags"
 	"github.com/rclone/rclone/fs/operations"
 	"github.com/rclone/rclone/fs/sync"
@@ -13,12 +16,109 @@ import (
 
 var (
 	createEmptySrcDirs = false
+	combined           = ""
+	missingOnSrc       = ""
+	missingOnDst       = ""
+	match              = ""
+	differ             = ""
+	errFile            = ""
+	opt                = operations.LoggerOpt{}
 )
 
 func init() {
 	cmd.Root.AddCommand(commandDefinition)
 	cmdFlags := commandDefinition.Flags()
 	flags.BoolVarP(cmdFlags, &createEmptySrcDirs, "create-empty-src-dirs", "", createEmptySrcDirs, "Create empty source dirs on destination after sync", "")
+	flags.StringVarP(cmdFlags, &combined, "combined", "", combined, "Make a combined report of changes to this file", "")
+	flags.StringVarP(cmdFlags, &missingOnSrc, "missing-on-src", "", missingOnSrc, "Report all files missing from the source to this file", "")
+	flags.StringVarP(cmdFlags, &missingOnDst, "missing-on-dst", "", missingOnDst, "Report all files missing from the destination to this file", "")
+	flags.StringVarP(cmdFlags, &match, "match", "", match, "Report all matching files to this file", "")
+	flags.StringVarP(cmdFlags, &differ, "differ", "", differ, "Report all non-matching files to this file", "")
+	flags.StringVarP(cmdFlags, &errFile, "error", "", errFile, "Report all files with errors (hashing or reading) to this file", "")
+}
+
+func SyncLoggerFn(ctx context.Context, sigil rune, src fs.ObjectInfo, dst fs.ObjectInfo, err error) {
+	_, srcOk := src.(fs.Object)
+	_, dstOk := dst.(fs.Object)
+	var filename string
+	if !srcOk && !dstOk {
+		return
+	} else if srcOk && !dstOk {
+		filename = src.Remote()
+	} else {
+		filename = dst.String()
+	}
+
+	if operations.SigilToOpt(sigil, opt) != nil {
+		operations.SyncFprintfWrapper(operations.SigilToOpt(sigil, opt), "%s\n", filename)
+	}
+	if opt.Combined != nil && sigil != operations.Completed {
+		operations.SyncFprintfWrapper(opt.Combined, "%c %s\n", sigil, filename)
+		fs.Debugf(nil, "Sync Logger: %s: %c %s\n", operations.TranslateSigil(sigil), sigil, filename)
+	}
+}
+
+// GetSyncLoggerOpt gets the options corresponding to the logger flags
+func GetSyncLoggerOpt() (operations.LoggerOpt, func(), error) {
+	closers := []io.Closer{}
+
+	opt.LoggerFn = SyncLoggerFn
+
+	open := func(name string, pout *io.Writer) error {
+		if name == "" {
+			return nil
+		}
+		if name == "-" {
+			*pout = os.Stdout
+			return nil
+		}
+		out, err := os.Create(name)
+		if err != nil {
+			return err
+		}
+		*pout = out
+		closers = append(closers, out)
+		return nil
+	}
+
+	if err := open(combined, &opt.Combined); err != nil {
+		return opt, nil, err
+	}
+	if err := open(missingOnSrc, &opt.MissingOnSrc); err != nil {
+		return opt, nil, err
+	}
+	if err := open(missingOnDst, &opt.MissingOnDst); err != nil {
+		return opt, nil, err
+	}
+	if err := open(match, &opt.Match); err != nil {
+		return opt, nil, err
+	}
+	if err := open(differ, &opt.Differ); err != nil {
+		return opt, nil, err
+	}
+	if err := open(errFile, &opt.Error); err != nil {
+		return opt, nil, err
+	}
+
+	close := func() {
+		for _, closer := range closers {
+			err := closer.Close()
+			if err != nil {
+				fs.Errorf(nil, "Failed to close report output: %v", err)
+			}
+		}
+	}
+
+	return opt, close, nil
+}
+
+func anyNotBlank(s ...string) bool {
+	for _, x := range s {
+		if x != "" {
+			return true
+		}
+	}
+	return false
 }
 
 var commandDefinition = &cobra.Command{
@@ -67,10 +167,22 @@ See [this forum post](https://forum.rclone.org/t/sync-not-clearing-duplicates/14
 		cmd.CheckArgs(2, 2, command, args)
 		fsrc, srcFileName, fdst := cmd.NewFsSrcFileDst(args)
 		cmd.Run(true, true, command, func() error {
-			if srcFileName == "" {
-				return sync.Sync(context.Background(), fdst, fsrc, createEmptySrcDirs)
+			opt, close, err := GetSyncLoggerOpt()
+			if err != nil {
+				return err
 			}
-			return operations.CopyFile(context.Background(), fdst, fsrc, srcFileName, srcFileName)
+			defer close()
+
+			ctx := context.Background()
+
+			if anyNotBlank(combined, missingOnSrc, missingOnDst, match, differ, errFile) {
+				ctx = operations.NewSyncLogger(ctx, opt)
+			}
+
+			if srcFileName == "" {
+				return sync.Sync(ctx, fdst, fsrc, createEmptySrcDirs)
+			}
+			return operations.CopyFile(ctx, fdst, fsrc, srcFileName, srcFileName)
 		})
 	},
 }

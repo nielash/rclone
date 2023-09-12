@@ -181,12 +181,15 @@ func logModTimeUpload(dst fs.Object) {
 
 func equal(ctx context.Context, src fs.ObjectInfo, dst fs.Object, opt equalOpt) bool {
 	ci := fs.GetConfig(ctx)
+	logger := GetLogger(ctx)
 	if sizeDiffers(ctx, src, dst) {
 		fs.Debugf(src, "Sizes differ (src %d vs dst %d)", src.Size(), dst.Size())
+		logger(ctx, Differ, src, dst, nil)
 		return false
 	}
 	if opt.sizeOnly {
 		fs.Debugf(src, "Sizes identical")
+		logger(ctx, Match, src, dst, nil)
 		return true
 	}
 
@@ -198,6 +201,7 @@ func equal(ctx context.Context, src fs.ObjectInfo, dst fs.Object, opt equalOpt) 
 		same, ht, _ := CheckHashes(ctx, src, dst)
 		if !same {
 			fs.Debugf(src, "%v differ", ht)
+			logger(ctx, Differ, src, dst, nil)
 			return false
 		}
 		if ht == hash.None {
@@ -211,6 +215,7 @@ func equal(ctx context.Context, src fs.ObjectInfo, dst fs.Object, opt equalOpt) 
 		} else {
 			fs.Debugf(src, "Size and %v of src and dst objects identical", ht)
 		}
+		logger(ctx, Match, src, dst, nil)
 		return true
 	}
 
@@ -220,12 +225,14 @@ func equal(ctx context.Context, src fs.ObjectInfo, dst fs.Object, opt equalOpt) 
 		modifyWindow := fs.GetModifyWindow(ctx, src.Fs(), dst.Fs())
 		if modifyWindow == fs.ModTimeNotSupported {
 			fs.Debugf(src, "Sizes identical")
+			logger(ctx, Match, src, dst, nil)
 			return true
 		}
 		dstModTime := dst.ModTime(ctx)
 		dt := dstModTime.Sub(srcModTime)
 		if dt < modifyWindow && dt > -modifyWindow {
 			fs.Debugf(src, "Size and modification time the same (differ by %s, within tolerance %s)", dt, modifyWindow)
+			logger(ctx, Match, src, dst, nil)
 			return true
 		}
 
@@ -236,10 +243,12 @@ func equal(ctx context.Context, src fs.ObjectInfo, dst fs.Object, opt equalOpt) 
 	same, ht, _ := CheckHashes(ctx, src, dst)
 	if !same {
 		fs.Debugf(src, "%v differ", ht)
+		logger(ctx, Differ, src, dst, nil)
 		return false
 	}
 	if ht == hash.None && !ci.RefreshTimes {
 		// if couldn't check hash, return that they differ
+		logger(ctx, Differ, src, dst, nil)
 		return false
 	}
 
@@ -250,6 +259,7 @@ func equal(ctx context.Context, src fs.ObjectInfo, dst fs.Object, opt equalOpt) 
 			// Error if objects are treated as immutable
 			if ci.Immutable {
 				fs.Errorf(dst, "Timestamp mismatch between immutable objects")
+				logger(ctx, Differ, src, dst, nil)
 				return false
 			}
 			// Update the mtime of the dst object here
@@ -257,6 +267,7 @@ func equal(ctx context.Context, src fs.ObjectInfo, dst fs.Object, opt equalOpt) 
 			if errors.Is(err, fs.ErrorCantSetModTime) {
 				logModTimeUpload(dst)
 				fs.Infof(dst, "src and dst identical but can't set mod time without re-uploading")
+				logger(ctx, Differ, src, dst, nil)
 				return false
 			} else if errors.Is(err, fs.ErrorCantSetModTimeWithoutDelete) {
 				logModTimeUpload(dst)
@@ -269,15 +280,18 @@ func equal(ctx context.Context, src fs.ObjectInfo, dst fs.Object, opt equalOpt) 
 						fs.Errorf(dst, "failed to delete before re-upload: %v", err)
 					}
 				}
+				logger(ctx, Differ, src, dst, nil)
 				return false
 			} else if err != nil {
 				err = fs.CountError(err)
 				fs.Errorf(dst, "Failed to set modification time: %v", err)
 			} else {
 				fs.Infof(src, "Updated modification time in destination")
+				// TODO: probably need to log "Differ" here, but there will be a duplicate...
 			}
 		}
 	}
+	logger(ctx, Match, src, dst, nil)
 	return true
 }
 
@@ -566,6 +580,8 @@ func Copy(ctx context.Context, f fs.Fs, dst fs.Object, remote string, src fs.Obj
 		actionTaken = fmt.Sprintf("%s to: %s", actionTaken, newDst.String())
 	}
 	fs.Infof(src, "%s%s", actionTaken, fs.LogValueHide("size", fs.SizeSuffix(src.Size())))
+	logger := GetLogger(ctx)
+	logger(ctx, Completed, src, newDst, err)
 	return newDst, err
 }
 
@@ -607,6 +623,7 @@ func SameObject(src, dst fs.Object) bool {
 func Move(ctx context.Context, fdst fs.Fs, dst fs.Object, remote string, src fs.Object) (newDst fs.Object, err error) {
 	ci := fs.GetConfig(ctx)
 	tr := accounting.Stats(ctx).NewCheckingTransfer(src, "moving")
+	logger := GetLogger(ctx)
 	defer func() {
 		if err == nil {
 			accounting.Stats(ctx).Renames(1)
@@ -641,6 +658,7 @@ func Move(ctx context.Context, fdst fs.Fs, dst fs.Object, remote string, src fs.
 			}
 			in.ServerSideMoveEnd(newDst.Size()) // account the bytes for the server-side transfer
 			_ = in.Close()
+			logger(ctx, Completed, src, newDst, err)
 			return newDst, nil
 		case fs.ErrorCantMove:
 			fs.Debugf(src, "Can't move, switching to copy")
@@ -649,6 +667,7 @@ func Move(ctx context.Context, fdst fs.Fs, dst fs.Object, remote string, src fs.
 			err = fs.CountError(err)
 			fs.Errorf(src, "Couldn't move: %v", err)
 			_ = in.Close()
+			logger(ctx, CheckError, src, newDst, err)
 			return newDst, err
 		}
 	}
@@ -656,9 +675,11 @@ func Move(ctx context.Context, fdst fs.Fs, dst fs.Object, remote string, src fs.
 	newDst, err = Copy(ctx, fdst, dst, remote, src)
 	if err != nil {
 		fs.Errorf(src, "Not deleting source as copy failed: %v", err)
+		logger(ctx, CheckError, src, newDst, err)
 		return newDst, err
 	}
 	// Delete src if no error on copy
+	logger(ctx, Completed, src, newDst, err)
 	return newDst, DeleteFile(ctx, src)
 }
 
@@ -2507,4 +2528,129 @@ func SkipDestructive(ctx context.Context, subject interface{}, action string) (s
 		}
 	}
 	return skip
+}
+
+// LOGGER
+
+// LoggerFn uses fs.ObjectInfo instead of fs.Object mainly because of equal()
+// where src fs.ObjectInfo, dst fs.Object
+// For LoggerFn example, see bisync.WriteResults() or sync.SyncLoggerFn()
+// Usage example: s.logger(ctx, operations.Differ, src, dst, nil)
+type LoggerFn func(ctx context.Context, sigil rune, src fs.ObjectInfo, dst fs.ObjectInfo, err error)
+type loggerContextKey struct{}
+
+var loggerKey = loggerContextKey{}
+
+// LoggerOpt contains options for the Sync Logger functions
+// TODO: refactor Check in here too?
+type LoggerOpt struct {
+	// Fdst, Fsrc   fs.Fs         // fses to check
+	// Check        checkFn       // function to use for checking
+	// OneWay       bool          // one way only?
+	LoggerFn     LoggerFn      // function to use for logging
+	Combined     io.Writer     // a file with file names with leading sigils
+	MissingOnSrc io.Writer     // files only in the destination
+	MissingOnDst io.Writer     // files only in the source
+	Match        io.Writer     // matching files
+	Differ       io.Writer     // differing files
+	Error        io.Writer     // files with errors of some kind
+	Completed    io.Writer     // files that were updated on the destination
+	JSON         *bytes.Buffer // used by bisync to read/write struct as JSON
+}
+
+// Sigil constants
+const (
+	MissingOnSrc rune = '-'
+	MissingOnDst rune = '+'
+	Match        rune = '='
+	Differ       rune = '*'
+	CheckError   rune = '!'
+	Completed    rune = '.'
+	Other        rune = '?' // reserved but not currently used
+)
+
+// StoreLogger stores logger in ctx and returns a copy of ctx in which loggerKey = logger
+func StoreLogger(ctx context.Context, logger LoggerFn) context.Context {
+	return context.WithValue(ctx, loggerKey, logger)
+}
+
+// GetLogger attempts to retrieve LoggerFn from context, returns it if found, otherwise returns no-op function
+func GetLogger(ctx context.Context) LoggerFn {
+	logger, ok := ctx.Value(loggerKey).(LoggerFn)
+	if !ok {
+		logger = func(ctx context.Context, sigil rune, src fs.ObjectInfo, dst fs.ObjectInfo, err error) {}
+	}
+	return logger
+}
+
+// NewSyncLogger starts a new logger with the options passed in and saves it to ctx for retrieval later
+func NewSyncLogger(ctx context.Context, opt LoggerOpt) context.Context {
+	return StoreLogger(ctx, func(ctx context.Context, sigil rune, src fs.ObjectInfo, dst fs.ObjectInfo, err error) {
+
+		if opt.LoggerFn != nil {
+			opt.LoggerFn(ctx, sigil, src, dst, err)
+		} else {
+			syncFprintf(opt.Combined, "%c %s\n", sigil, dst.Remote())
+		}
+	})
+}
+
+// NewLoggerOpt returns a new LoggerOpt struct with defaults
+func NewLoggerOpt() LoggerOpt {
+	opt := LoggerOpt{
+		Combined:     new(bytes.Buffer),
+		MissingOnSrc: new(bytes.Buffer),
+		MissingOnDst: new(bytes.Buffer),
+		Match:        new(bytes.Buffer),
+		Differ:       new(bytes.Buffer),
+		Error:        new(bytes.Buffer),
+		Completed:    new(bytes.Buffer),
+		JSON:         new(bytes.Buffer),
+	}
+	return opt
+}
+
+// translates sigil rune into more human-readable string
+func TranslateSigil(sigil rune) string {
+	switch sigil {
+	case '-':
+		return "MissingOnSrc"
+	case '+':
+		return "MissingOnDst"
+	case '=':
+		return "Match"
+	case '*':
+		return "Differ"
+	case '!':
+		return "Error"
+	case '.':
+		return "Completed"
+	case '?':
+		return "Other"
+	}
+	return "unknown"
+}
+
+// directs traffic from sigil -> LoggerOpt.Writer
+func SigilToOpt(sigil rune, opt LoggerOpt) io.Writer {
+	switch sigil {
+	case '-':
+		return opt.MissingOnSrc
+	case '+':
+		return opt.MissingOnDst
+	case '=':
+		return opt.Match
+	case '*':
+		return opt.Differ
+	case '!':
+		return opt.Error
+	case '.':
+		return opt.Completed
+	}
+	return nil
+}
+
+// simply exports syncFprintf() without breaking things. (TODO: better solution?)
+func SyncFprintfWrapper(w io.Writer, format string, a ...interface{}) {
+	syncFprintf(w, format, a...)
 }

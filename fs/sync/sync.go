@@ -82,6 +82,7 @@ type syncCopyMove struct {
 	backupDir              fs.Fs                  // place to store overwrites/deletes
 	checkFirst             bool                   // if set run all the checkers before starting transfers
 	maxDurationEndTime     time.Time              // end time if --max-duration is set
+	logger                 operations.LoggerFn    // TODO: write description
 }
 
 type trackRenamesStrategy byte
@@ -135,6 +136,9 @@ func newSyncCopyMove(ctx context.Context, fdst, fsrc fs.Fs, deleteMode fs.Delete
 		trackRenamesCh:         make(chan fs.Object, ci.Checkers),
 		checkFirst:             ci.CheckFirst,
 	}
+
+	s.logger = operations.GetLogger(ctx)
+
 	backlog := ci.MaxBacklog
 	if s.checkFirst {
 		fs.Infof(s.fdst, "Running all checks before starting transfers")
@@ -399,6 +403,7 @@ func (s *syncCopyMove) pairChecker(in *pipe, out *pipe, fraction int, wg *sync.W
 				}
 			}
 		}
+		// TODO: should we log here?
 		tr.Done(s.ctx, err)
 	}
 }
@@ -850,6 +855,7 @@ func (s *syncCopyMove) tryRename(src fs.Object) bool {
 	s.dstFilesMu.Unlock()
 
 	fs.Infof(src, "Renamed from %q", dst.Remote())
+	// TODO: log here?
 	return true
 }
 
@@ -971,6 +977,7 @@ func (s *syncCopyMove) DstOnly(dst fs.DirEntry) (recurse bool) {
 	}
 	switch x := dst.(type) {
 	case fs.Object:
+		s.logger(s.ctx, operations.MissingOnSrc, nil, x, nil)
 		switch s.deleteMode {
 		case fs.DeleteModeAfter:
 			// record object as needs deleting
@@ -1009,6 +1016,7 @@ func (s *syncCopyMove) SrcOnly(src fs.DirEntry) (recurse bool) {
 	}
 	switch x := src.(type) {
 	case fs.Object:
+		s.logger(s.ctx, operations.MissingOnDst, nil, x, nil)
 		// If it's a copy operation,
 		// remove parent directory from srcEmptyDirs
 		// since it's not really empty
@@ -1065,6 +1073,7 @@ func (s *syncCopyMove) Match(ctx context.Context, dst, src fs.DirEntry) (recurse
 		}
 		dstX, ok := dst.(fs.Object)
 		if ok {
+			// No logger here because we'll handle it in equal()
 			ok = s.toBeChecked.Put(s.inCtx, fs.ObjectPair{Src: srcX, Dst: dstX})
 			if !ok {
 				return false
@@ -1172,6 +1181,7 @@ func MoveDir(ctx context.Context, fdst, fsrc fs.Fs, deleteEmptySrcDirs bool, cop
 			fs.Infof(fdst, "Server side directory move failed - fallback to file moves: %v", err)
 		case nil:
 			fs.Infof(fdst, "Server side directory move succeeded")
+			// TODO: log here?
 			return nil
 		default:
 			err = fs.CountError(err)
