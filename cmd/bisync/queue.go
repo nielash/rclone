@@ -24,39 +24,11 @@ func (b *bisyncRun) fastCopy(ctx context.Context, fsrc, fdst fs.Fs, files bilib.
 		}
 	}
 
-	return sync.CopyDir(ctxCopy, fdst, fsrc, b.opt.CreateEmptySrcDirs)
-}
-
-func (b *bisyncRun) fastDelete(ctx context.Context, f fs.Fs, files bilib.Names, queueName string) error {
-	if err := b.saveQueue(files, queueName); err != nil {
-		return err
-	}
-
-	transfers := fs.GetConfig(ctx).Transfers
-
-	ctxRun, filterDelete := filter.AddConfig(b.opt.setDryRun(ctx))
-
-	for _, file := range files.ToList() {
-		if err := filterDelete.AddFile(file); err != nil {
-			return err
-		}
-	}
-
-	objChan := make(fs.ObjectsChan, transfers)
-	errChan := make(chan error, 1)
-	go func() {
-		errChan <- operations.DeleteFiles(ctxRun, objChan)
-	}()
-	err := operations.ListFn(ctxRun, f, func(obj fs.Object) {
-		remote := obj.Remote()
-		if files.Has(remote) {
-			objChan <- obj
-		}
-	})
-	close(objChan)
-	opErr := <-errChan
-	if err == nil {
-		err = opErr
+	var err error
+	if b.opt.Resync {
+		err = sync.CopyDir(ctxCopy, fdst, fsrc, b.opt.CreateEmptySrcDirs)
+	} else {
+		err = sync.Sync(ctxCopy, fdst, fsrc, b.opt.CreateEmptySrcDirs)
 	}
 	return err
 }
