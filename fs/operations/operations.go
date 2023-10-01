@@ -2753,15 +2753,15 @@ func WinningSide(ctx context.Context, sigil Sigil, src fs.ObjectInfo, dst fs.Obj
 			}
 			return winner // none, because dst should just get deleted
 		}
-			if sigil == MissingOnDst && ci.DryRun {
-				return winner // none, because it does not currently exist on dst, and will still not exist after DryRun
-			} else if ci.DryRun && dst != nil {
-				winner.Obj = dst
-				winner.Side = "dst"
-			} else if src != nil {
-				winner.Obj = src
-				winner.Side = "src"
-			}
+		if sigil == MissingOnDst && ci.DryRun {
+			return winner // none, because it does not currently exist on dst, and will still not exist after DryRun
+		} else if ci.DryRun && dst != nil {
+			winner.Obj = dst
+			winner.Side = "dst"
+		} else if src != nil {
+			winner.Obj = src
+			winner.Side = "src"
+		}
 		return winner
 	}
 
@@ -2868,4 +2868,85 @@ func (dir DirObjInfo) Size() int64 {
 // DirToObjInfo converts an fs.DirEntry to DirObjInfo
 func DirToObjInfo(entry fs.DirEntry, fs fs.Fs) DirObjInfo {
 	return DirObjInfo{DirEntry: entry, DirFs: fs}
+}
+
+// SetListFormat sets opt.ListFormat for destAfter
+// TODO: possibly refactor duplicate code from cmd/lsf, where this is mostly copied from
+func (opt *LoggerOpt) SetListFormat(ctx context.Context, cmdFlags *pflag.FlagSet) {
+	// Work out if the separatorFlag was supplied or not
+	separatorFlag := cmdFlags.Lookup("separator")
+	separatorFlagSupplied := separatorFlag != nil && separatorFlag.Changed
+	// Default the separator to , if using CSV
+	if opt.Csv && !separatorFlagSupplied {
+		opt.Separator = ","
+	}
+
+	var list ListFormat
+	list.SetSeparator(opt.Separator)
+	list.SetCSV(opt.Csv)
+	list.SetDirSlash(opt.DirSlash)
+	list.SetAbsolute(opt.Absolute)
+	var JSONOpt = ListJSONOpt{
+		NoModTime:  true,
+		NoMimeType: true,
+		DirsOnly:   opt.DirsOnly,
+		FilesOnly:  opt.FilesOnly,
+		// Recurse:    opt.Recurse,
+	}
+
+	for _, char := range opt.Format {
+		switch char {
+		case 'p':
+			list.AddPath()
+		case 't':
+			list.AddModTime()
+			JSONOpt.NoModTime = false
+		case 's':
+			list.AddSize()
+		case 'h':
+			list.AddHash(opt.HashType)
+			JSONOpt.ShowHash = true
+			JSONOpt.HashTypes = []string{opt.HashType.String()}
+		case 'i':
+			list.AddID()
+		case 'm':
+			list.AddMimeType()
+			JSONOpt.NoMimeType = false
+		case 'e':
+			list.AddEncrypted()
+			JSONOpt.ShowEncrypted = true
+		case 'o':
+			list.AddOrigID()
+			JSONOpt.ShowOrigIDs = true
+		case 'T':
+			list.AddTier()
+		case 'M':
+			list.AddMetadata()
+			JSONOpt.Metadata = true
+		default:
+			fs.Errorf(nil, "unknown format character %q", char)
+		}
+	}
+	opt.ListFormat = list
+	opt.JSONOpt = JSONOpt
+}
+
+// NewListJSON makes a new *listJSON for destAfter
+func (opt *LoggerOpt) NewListJSON(ctx context.Context, fdst fs.Fs, remote string) {
+	opt.LJ, _ = newListJSON(ctx, fdst, remote, &opt.JSONOpt)
+	fs.Debugf(nil, "%v", opt.LJ)
+}
+
+// JSONEntry returns a *ListJSONItem for destAfter
+func (opt *LoggerOpt) JSONEntry(ctx context.Context, entry fs.DirEntry) (*ListJSONItem, error) {
+	return opt.LJ.entry(ctx, entry)
+}
+
+// PrintDestAfter writes a *ListJSONItem to opt.DestAfter
+func (opt *LoggerOpt) PrintDestAfter(ctx context.Context, sigil Sigil, src fs.ObjectInfo, dst fs.ObjectInfo, err error) {
+	entry := WinningSide(ctx, sigil, src, dst, err)
+	if entry.Obj != nil {
+		JSONEntry, _ := opt.JSONEntry(ctx, entry.Obj)
+		_, _ = fmt.Fprintln(opt.DestAfter, opt.ListFormat.Format(JSONEntry))
+	}
 }
