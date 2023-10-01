@@ -1241,7 +1241,7 @@ func TestListFormat(t *testing.T) {
 
 	list.SetOutput(nil)
 	list.AddModTime()
-	assert.Equal(t, t1.Local().Format("2006-01-02 15:04:05"), list.Format(item0))
+	assert.Equal(t, t1.Local().Format("2006-01-02 15:04:05.000000000"), list.Format(item0))
 
 	list.SetOutput(nil)
 	list.SetSeparator("|")
@@ -1275,8 +1275,8 @@ func TestListFormat(t *testing.T) {
 	list.AddModTime()
 	list.SetDirSlash(true)
 	list.SetSeparator("__SEP__")
-	assert.Equal(t, "1__SEP__a__SEP__"+t1.Local().Format("2006-01-02 15:04:05"), list.Format(item0))
-	assert.Equal(t, "-1__SEP__subdir/__SEP__"+t2.Local().Format("2006-01-02 15:04:05"), list.Format(item1))
+	assert.Equal(t, "1__SEP__a__SEP__"+t1.Local().Format("2006-01-02 15:04:05.000000000"), list.Format(item0))
+	assert.Equal(t, "-1__SEP__subdir/__SEP__"+t2.Local().Format("2006-01-02 15:04:05.000000000"), list.Format(item1))
 
 	for _, test := range []struct {
 		ht   hash.Type
@@ -1297,8 +1297,8 @@ func TestListFormat(t *testing.T) {
 	list.AddPath()
 	list.AddModTime()
 	list.SetDirSlash(true)
-	assert.Equal(t, "1|a|"+t1.Local().Format("2006-01-02 15:04:05"), list.Format(item0))
-	assert.Equal(t, "-1|subdir/|"+t2.Local().Format("2006-01-02 15:04:05"), list.Format(item1))
+	assert.Equal(t, "1|a|"+t1.Local().Format("2006-01-02 15:04:05.000000000"), list.Format(item0))
+	assert.Equal(t, "-1|subdir/|"+t2.Local().Format("2006-01-02 15:04:05.000000000"), list.Format(item1))
 
 	list.SetOutput(nil)
 	list.SetSeparator("|")
