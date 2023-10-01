@@ -141,7 +141,7 @@ file3
 	items, _ := list.DirSorted(context.Background(), f, true, "")
 	var expectedOutput string
 	for _, item := range items {
-		expectedOutput += item.ModTime(context.Background()).Format("2006-01-02 15:04:05") + "\n"
+		expectedOutput += item.ModTime(context.Background()).Format("2006-01-02 15:04:05.000000000") + "\n"
 	}
 
 	assert.Equal(t, expectedOutput, buf.String())
@@ -203,10 +203,10 @@ func TestWholeLsf(t *testing.T) {
 	itemsInSubdir, _ := list.DirSorted(context.Background(), f, true, "subdir")
 	var expectedOutput []string
 	for _, item := range items {
-		expectedOutput = append(expectedOutput, item.ModTime(context.Background()).Format("2006-01-02 15:04:05"))
+		expectedOutput = append(expectedOutput, item.ModTime(context.Background()).Format("2006-01-02 15:04:05.000000000"))
 	}
 	for _, item := range itemsInSubdir {
-		expectedOutput = append(expectedOutput, item.ModTime(context.Background()).Format("2006-01-02 15:04:05"))
+		expectedOutput = append(expectedOutput, item.ModTime(context.Background()).Format("2006-01-02 15:04:05.000000000"))
 	}
 
 	assert.Equal(t, `file1_+_0_+_`+expectedOutput[0]+`

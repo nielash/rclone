@@ -27,6 +27,7 @@ import (
 	"github.com/rclone/rclone/fs/accounting"
 	"github.com/rclone/rclone/fs/cache"
 	"github.com/rclone/rclone/fs/config"
+	"github.com/rclone/rclone/fs/config/flags"
 	"github.com/rclone/rclone/fs/filter"
 	"github.com/rclone/rclone/fs/fserrors"
 	"github.com/rclone/rclone/fs/fshttp"
@@ -36,6 +37,7 @@ import (
 	"github.com/rclone/rclone/lib/atexit"
 	"github.com/rclone/rclone/lib/random"
 	"github.com/rclone/rclone/lib/readers"
+	"github.com/spf13/pflag"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -180,12 +182,15 @@ func logModTimeUpload(dst fs.Object) {
 
 func equal(ctx context.Context, src fs.ObjectInfo, dst fs.Object, opt equalOpt) bool {
 	ci := fs.GetConfig(ctx)
+	logger, _ := GetLogger(ctx)
 	if sizeDiffers(ctx, src, dst) {
 		fs.Debugf(src, "Sizes differ (src %d vs dst %d)", src.Size(), dst.Size())
+		logger(ctx, Differ, src, dst, nil)
 		return false
 	}
 	if opt.sizeOnly {
 		fs.Debugf(src, "Sizes identical")
+		logger(ctx, Match, src, dst, nil)
 		return true
 	}
 
@@ -197,6 +202,7 @@ func equal(ctx context.Context, src fs.ObjectInfo, dst fs.Object, opt equalOpt) 
 		same, ht, _ := CheckHashes(ctx, src, dst)
 		if !same {
 			fs.Debugf(src, "%v differ", ht)
+			logger(ctx, Differ, src, dst, nil)
 			return false
 		}
 		if ht == hash.None {
@@ -210,6 +216,7 @@ func equal(ctx context.Context, src fs.ObjectInfo, dst fs.Object, opt equalOpt) 
 		} else {
 			fs.Debugf(src, "Size and %v of src and dst objects identical", ht)
 		}
+		logger(ctx, Match, src, dst, nil)
 		return true
 	}
 
@@ -219,12 +226,14 @@ func equal(ctx context.Context, src fs.ObjectInfo, dst fs.Object, opt equalOpt) 
 		modifyWindow := fs.GetModifyWindow(ctx, src.Fs(), dst.Fs())
 		if modifyWindow == fs.ModTimeNotSupported {
 			fs.Debugf(src, "Sizes identical")
+			logger(ctx, Match, src, dst, nil)
 			return true
 		}
 		dstModTime := dst.ModTime(ctx)
 		dt := dstModTime.Sub(srcModTime)
 		if dt < modifyWindow && dt > -modifyWindow {
 			fs.Debugf(src, "Size and modification time the same (differ by %s, within tolerance %s)", dt, modifyWindow)
+			logger(ctx, Match, src, dst, nil)
 			return true
 		}
 
@@ -235,10 +244,12 @@ func equal(ctx context.Context, src fs.ObjectInfo, dst fs.Object, opt equalOpt) 
 	same, ht, _ := CheckHashes(ctx, src, dst)
 	if !same {
 		fs.Debugf(src, "%v differ", ht)
+		logger(ctx, Differ, src, dst, nil)
 		return false
 	}
 	if ht == hash.None && !ci.RefreshTimes {
 		// if couldn't check hash, return that they differ
+		logger(ctx, Differ, src, dst, nil)
 		return false
 	}
 
@@ -249,6 +260,7 @@ func equal(ctx context.Context, src fs.ObjectInfo, dst fs.Object, opt equalOpt) 
 			// Error if objects are treated as immutable
 			if ci.Immutable {
 				fs.Errorf(dst, "Timestamp mismatch between immutable objects")
+				logger(ctx, Differ, src, dst, nil)
 				return false
 			}
 			// Update the mtime of the dst object here
@@ -256,6 +268,7 @@ func equal(ctx context.Context, src fs.ObjectInfo, dst fs.Object, opt equalOpt) 
 			if errors.Is(err, fs.ErrorCantSetModTime) {
 				logModTimeUpload(dst)
 				fs.Infof(dst, "src and dst identical but can't set mod time without re-uploading")
+				logger(ctx, Differ, src, dst, nil)
 				return false
 			} else if errors.Is(err, fs.ErrorCantSetModTimeWithoutDelete) {
 				logModTimeUpload(dst)
@@ -268,6 +281,7 @@ func equal(ctx context.Context, src fs.ObjectInfo, dst fs.Object, opt equalOpt) 
 						fs.Errorf(dst, "failed to delete before re-upload: %v", err)
 					}
 				}
+				logger(ctx, Differ, src, dst, nil)
 				return false
 			} else if err != nil {
 				err = fs.CountError(err)
@@ -277,6 +291,7 @@ func equal(ctx context.Context, src fs.ObjectInfo, dst fs.Object, opt equalOpt) 
 			}
 		}
 	}
+	logger(ctx, Match, src, dst, nil)
 	return true
 }
 
@@ -493,6 +508,8 @@ func DeleteFilesWithBackupDir(ctx context.Context, toBeDeleted fs.ObjectsChan, b
 				err := DeleteFileWithBackupDir(ctx, dst, backupDir)
 				if err != nil {
 					errorCount.Add(1)
+					logger, _ := GetLogger(ctx)
+					logger(ctx, TransferError, nil, dst, err)
 					if fserrors.IsFatalError(err) {
 						fs.Errorf(dst, "Got fatal error on delete: %s", err)
 						fatalErrorCount.Add(1)
@@ -650,12 +667,12 @@ var SyncPrintf = func(format string, a ...interface{}) {
 	fmt.Printf(format, a...)
 }
 
-// Synchronized fmt.Fprintf
+// SyncFprintf - Synchronized fmt.Fprintf
 //
 // Ignores errors from Fprintf.
 //
 // Prints to stdout if w is nil
-func syncFprintf(w io.Writer, format string, a ...interface{}) {
+func SyncFprintf(w io.Writer, format string, a ...interface{}) {
 	if w == nil || w == os.Stdout {
 		SyncPrintf(format, a...)
 	} else {
@@ -727,7 +744,7 @@ func CountStringField(count int64, humanReadable bool, rawWidth int) string {
 func List(ctx context.Context, f fs.Fs, w io.Writer) error {
 	ci := fs.GetConfig(ctx)
 	return ListFn(ctx, f, func(o fs.Object) {
-		syncFprintf(w, "%s %s\n", SizeStringField(o.Size(), ci.HumanReadable, 9), o.Remote())
+		SyncFprintf(w, "%s %s\n", SizeStringField(o.Size(), ci.HumanReadable, 9), o.Remote())
 	})
 }
 
@@ -744,7 +761,7 @@ func ListLong(ctx context.Context, f fs.Fs, w io.Writer) error {
 			tr.Done(ctx, nil)
 		}()
 		modTime := o.ModTime(ctx)
-		syncFprintf(w, "%s %s %s\n", SizeStringField(o.Size(), ci.HumanReadable, 9), modTime.Local().Format("2006-01-02 15:04:05.000000000"), o.Remote())
+		SyncFprintf(w, "%s %s %s\n", SizeStringField(o.Size(), ci.HumanReadable, 9), modTime.Local().Format("2006-01-02 15:04:05.000000000"), o.Remote())
 	})
 }
 
@@ -843,7 +860,7 @@ func HashLister(ctx context.Context, ht hash.Type, outputBase64 bool, downloadFl
 				fs.Errorf(o, "%v", fs.CountError(err))
 				return
 			}
-			syncFprintf(w, "%*s  %s\n", width, sum, o.Remote())
+			SyncFprintf(w, "%*s  %s\n", width, sum, o.Remote())
 		}()
 	})
 	wg.Wait()
@@ -868,7 +885,7 @@ func HashSumStream(ht hash.Type, outputBase64 bool, in io.ReadCloser, w io.Write
 		return fmt.Errorf("hasher returned an error: %w", err)
 	}
 	width := hash.Width(ht, outputBase64)
-	syncFprintf(w, "%*s  -\n", width, sum)
+	SyncFprintf(w, "%*s  -\n", width, sum)
 	return nil
 }
 
@@ -904,7 +921,7 @@ func ListDir(ctx context.Context, f fs.Fs, w io.Writer) error {
 	return walk.ListR(ctx, f, "", false, ConfigMaxDepth(ctx, false), walk.ListDirs, func(entries fs.DirEntries) error {
 		entries.ForDir(func(dir fs.Directory) {
 			if dir != nil {
-				syncFprintf(w, "%s %13s %s %s\n", SizeStringField(dir.Size(), ci.HumanReadable, 12), dir.ModTime(ctx).Local().Format("2006-01-02 15:04:05"), CountStringField(dir.Items(), ci.HumanReadable, 9), dir.Remote())
+				SyncFprintf(w, "%s %13s %s %s\n", SizeStringField(dir.Size(), ci.HumanReadable, 12), dir.ModTime(ctx).Local().Format("2006-01-02 15:04:05"), CountStringField(dir.Items(), ci.HumanReadable, 9), dir.Remote())
 			}
 		})
 		return nil
@@ -1472,18 +1489,22 @@ func CompareOrCopyDest(ctx context.Context, fdst fs.Fs, dst, src fs.Object, Comp
 // transferred or not.
 func NeedTransfer(ctx context.Context, dst, src fs.Object) bool {
 	ci := fs.GetConfig(ctx)
+	logger, _ := GetLogger(ctx)
 	if dst == nil {
 		fs.Debugf(src, "Need to transfer - File not found at Destination")
+		logger(ctx, MissingOnDst, src, nil, nil)
 		return true
 	}
 	// If we should ignore existing files, don't transfer
 	if ci.IgnoreExisting {
 		fs.Debugf(src, "Destination exists, skipping")
+		logger(ctx, Match, src, dst, nil)
 		return false
 	}
 	// If we should upload unconditionally
 	if ci.IgnoreTimes {
 		fs.Debugf(src, "Transferring unconditionally as --ignore-times is in use")
+		logger(ctx, Differ, src, dst, nil)
 		return true
 	}
 	// If UpdateOlder is in effect, skip if dst is newer than src
@@ -1502,6 +1523,7 @@ func NeedTransfer(ctx context.Context, dst, src fs.Object) bool {
 		switch {
 		case dt >= modifyWindow:
 			fs.Debugf(src, "Destination is newer than source, skipping")
+			logger(ctx, Match, src, dst, nil)
 			return false
 		case dt <= -modifyWindow:
 			// force --checksum on for the check and do update modtimes by default
@@ -1685,10 +1707,16 @@ func MoveBackupDir(ctx context.Context, backupDir fs.Fs, dst fs.Object) (err err
 // moveOrCopyFile moves or copies a single file possibly to a new name
 func moveOrCopyFile(ctx context.Context, fdst fs.Fs, fsrc fs.Fs, dstFileName string, srcFileName string, cp bool) (err error) {
 	ci := fs.GetConfig(ctx)
+	logger, usingLogger := GetLogger(ctx)
 	dstFilePath := path.Join(fdst.Root(), dstFileName)
 	srcFilePath := path.Join(fsrc.Root(), srcFileName)
 	if fdst.Name() == fsrc.Name() && dstFilePath == srcFilePath {
 		fs.Debugf(fdst, "don't need to copy/move %s, it is already at target location", dstFileName)
+		if usingLogger {
+			srcObj, _ := fsrc.NewObject(ctx, srcFileName)
+			dstObj, _ := fsrc.NewObject(ctx, dstFileName)
+			logger(ctx, Match, srcObj, dstObj, nil)
+		}
 		return nil
 	}
 
@@ -1701,6 +1729,7 @@ func moveOrCopyFile(ctx context.Context, fdst fs.Fs, fsrc fs.Fs, dstFileName str
 	// Find src object
 	srcObj, err := fsrc.NewObject(ctx, srcFileName)
 	if err != nil {
+		logger(ctx, TransferError, srcObj, nil, err)
 		return err
 	}
 
@@ -1711,6 +1740,7 @@ func moveOrCopyFile(ctx context.Context, fdst fs.Fs, fsrc fs.Fs, dstFileName str
 		if errors.Is(err, fs.ErrorObjectNotFound) {
 			dstObj = nil
 		} else if err != nil {
+			logger(ctx, TransferError, nil, dstObj, err)
 			return err
 		}
 	}
@@ -1722,11 +1752,13 @@ func moveOrCopyFile(ctx context.Context, fdst fs.Fs, fsrc fs.Fs, dstFileName str
 	if !cp && fdst.Name() == fsrc.Name() && fdst.Features().CaseInsensitive && dstFileName != srcFileName && strings.EqualFold(dstFilePath, srcFilePath) {
 		// Create random name to temporarily move file to
 		tmpObjName := dstFileName + "-rclone-move-" + random.String(8)
-		_, err := fdst.NewObject(ctx, tmpObjName)
+		tmpObjFail, err := fdst.NewObject(ctx, tmpObjName)
 		if err != fs.ErrorObjectNotFound {
 			if err == nil {
+				logger(ctx, TransferError, nil, tmpObjFail, err)
 				return errors.New("found an already existing file with a randomly generated name. Try the operation again")
 			}
+			logger(ctx, TransferError, nil, tmpObjFail, err)
 			return fmt.Errorf("error while attempting to move file to a temporary location: %w", err)
 		}
 		tr := accounting.Stats(ctx).NewTransfer(srcObj)
@@ -1735,9 +1767,11 @@ func moveOrCopyFile(ctx context.Context, fdst fs.Fs, fsrc fs.Fs, dstFileName str
 		}()
 		tmpObj, err := Op(ctx, fdst, nil, tmpObjName, srcObj)
 		if err != nil {
+			logger(ctx, TransferError, srcObj, tmpObj, err)
 			return fmt.Errorf("error while moving file to temporary location: %w", err)
 		}
 		_, err = Op(ctx, fdst, nil, dstFileName, tmpObj)
+		logger(ctx, MissingOnDst, tmpObj, nil, err)
 		return err
 	}
 
@@ -1775,9 +1809,11 @@ func moveOrCopyFile(ctx context.Context, fdst fs.Fs, fsrc fs.Fs, dstFileName str
 		if dstObj != nil && backupDir != nil {
 			err = MoveBackupDir(ctx, backupDir, dstObj)
 			if err != nil {
+				logger(ctx, TransferError, dstObj, nil, err)
 				return fmt.Errorf("moving to --backup-dir failed: %w", err)
 			}
 			// If successful zero out the dstObj as it is no longer there
+			logger(ctx, MissingOnDst, dstObj, nil, nil)
 			dstObj = nil
 		}
 
@@ -1786,8 +1822,10 @@ func moveOrCopyFile(ctx context.Context, fdst fs.Fs, fsrc fs.Fs, dstFileName str
 		if !cp {
 			if ci.IgnoreExisting {
 				fs.Debugf(srcObj, "Not removing source file as destination file exists and --ignore-existing is set")
+				logger(ctx, Match, srcObj, dstObj, nil)
 			} else {
 				err = DeleteFile(ctx, srcObj)
+				logger(ctx, Differ, srcObj, dstObj, nil)
 			}
 		}
 	}
@@ -1894,7 +1932,7 @@ func (l *ListFormat) SetOutput(output []func(entry *ListJSONItem) string) {
 // AddModTime adds file's Mod Time to output
 func (l *ListFormat) AddModTime() {
 	l.AppendOutput(func(entry *ListJSONItem) string {
-		return entry.ModTime.When.Local().Format("2006-01-02 15:04:05")
+		return entry.ModTime.When.Local().Format("2006-01-02 15:04:05.000000000")
 	})
 }
 
@@ -2230,4 +2268,327 @@ func SkipDestructive(ctx context.Context, subject interface{}, action string) (s
 		}
 	}
 	return skip
+}
+
+// LOGGER
+
+// Sigil represents the rune (-+=*!?) used by Logger to categorize files by their match/differ/missing status.
+type Sigil rune
+
+// String converts sigil to more human-readable string
+func (sigil Sigil) String() string {
+	switch sigil {
+	case '-':
+		return "MissingOnSrc"
+	case '+':
+		return "MissingOnDst"
+	case '=':
+		return "Match"
+	case '*':
+		return "Differ"
+	case '!':
+		return "Error"
+	// case '.':
+	// 	return "Completed"
+	case '?':
+		return "Other"
+	}
+	return "unknown"
+}
+
+// Writer directs traffic from sigil -> LoggerOpt.Writer
+func (sigil Sigil) Writer(opt LoggerOpt) io.Writer {
+	switch sigil {
+	case '-':
+		return opt.MissingOnSrc
+	case '+':
+		return opt.MissingOnDst
+	case '=':
+		return opt.Match
+	case '*':
+		return opt.Differ
+	case '!':
+		return opt.Error
+	}
+	return nil
+}
+
+// Sigil constants
+const (
+	MissingOnSrc  Sigil = '-'
+	MissingOnDst  Sigil = '+'
+	Match         Sigil = '='
+	Differ        Sigil = '*'
+	TransferError Sigil = '!'
+	Other         Sigil = '?' // reserved but not currently used
+)
+
+// LoggerFn uses fs.ObjectInfo instead of fs.Object mainly because of equal()
+// where src fs.ObjectInfo, dst fs.Object
+// For LoggerFn example, see bisync.WriteResults() or sync.SyncLoggerFn()
+// Usage example: s.logger(ctx, operations.Differ, src, dst, nil)
+type LoggerFn func(ctx context.Context, sigil Sigil, src fs.ObjectInfo, dst fs.ObjectInfo, err error)
+type loggerContextKey struct{}
+type loggerOptContextKey struct{}
+
+var loggerKey = loggerContextKey{}
+var loggerOptKey = loggerOptContextKey{}
+
+// LoggerOpt contains options for the Sync Logger functions
+// TODO: refactor Check in here too?
+type LoggerOpt struct {
+	// Fdst, Fsrc   fs.Fs         // fses to check
+	// Check        checkFn       // function to use for checking
+	// OneWay       bool          // one way only?
+	LoggerFn      LoggerFn      // function to use for logging
+	Combined      io.Writer     // a file with file names with leading sigils
+	MissingOnSrc  io.Writer     // files only in the destination
+	MissingOnDst  io.Writer     // files only in the source
+	Match         io.Writer     // matching files
+	Differ        io.Writer     // differing files
+	Error         io.Writer     // files with errors of some kind
+	DestAfter     io.Writer     // files that exist on the destination post-sync
+	JSON          *bytes.Buffer // used by bisync to read/write struct as JSON
+	DeleteModeOff bool          //affects whether Logger expects MissingOnSrc to be deleted
+
+	// lsf options for destAfter
+	ListFormat ListFormat
+	JSONOpt    ListJSONOpt
+	LJ         *listJSON
+	Format     string
+	Separator  string
+	DirSlash   bool
+	// Recurse   bool
+	HashType  hash.Type
+	FilesOnly bool
+	DirsOnly  bool
+	Csv       bool
+	Absolute  bool
+}
+
+// AddLoggerFlags adds the logger flags to the cmdFlags command
+func AddLoggerFlags(cmdFlags *pflag.FlagSet, opt *LoggerOpt, combined, missingOnSrc, missingOnDst, match, differ, errFile, destAfter *string) {
+	flags.StringVarP(cmdFlags, combined, "combined", "", *combined, "Make a combined report of changes to this file", "")
+	flags.StringVarP(cmdFlags, missingOnSrc, "missing-on-src", "", *missingOnSrc, "Report all files missing from the source to this file", "")
+	flags.StringVarP(cmdFlags, missingOnDst, "missing-on-dst", "", *missingOnDst, "Report all files missing from the destination to this file", "")
+	flags.StringVarP(cmdFlags, match, "match", "", *match, "Report all matching files to this file", "")
+	flags.StringVarP(cmdFlags, differ, "differ", "", *differ, "Report all non-matching files to this file", "")
+	flags.StringVarP(cmdFlags, errFile, "error", "", *errFile, "Report all files with errors (hashing or reading) to this file", "")
+	flags.StringVarP(cmdFlags, destAfter, "dest-after", "", *destAfter, "Report all files that exist on the dest post-sync", "")
+
+	// lsf flags for destAfter
+	flags.StringVarP(cmdFlags, &opt.Format, "format", "F", "p", "Output format - see lsf help for details", "")
+	flags.StringVarP(cmdFlags, &opt.Separator, "separator", "s", ";", "Separator for the items in the format", "")
+	flags.BoolVarP(cmdFlags, &opt.DirSlash, "dir-slash", "d", true, "Append a slash to directory names", "")
+	flags.FVarP(cmdFlags, &opt.HashType, "hash", "", "Use this hash when `h` is used in the format MD5|SHA-1|DropboxHash", "")
+	flags.BoolVarP(cmdFlags, &opt.FilesOnly, "files-only", "", true, "Only list files", "")
+	flags.BoolVarP(cmdFlags, &opt.DirsOnly, "dirs-only", "", false, "Only list directories", "")
+	flags.BoolVarP(cmdFlags, &opt.Csv, "csv", "", false, "Output in CSV format", "")
+	flags.BoolVarP(cmdFlags, &opt.Absolute, "absolute", "", false, "Put a leading / in front of path names", "")
+	// flags.BoolVarP(cmdFlags, &recurse, "recursive", "R", false, "Recurse into the listing", "")
+}
+
+// WithLogger stores logger in ctx and returns a copy of ctx in which loggerKey = logger
+func WithLogger(ctx context.Context, logger LoggerFn) context.Context {
+	return context.WithValue(ctx, loggerKey, logger)
+}
+
+// WithLoggerOpt stores loggerOpt in ctx and returns a copy of ctx in which loggerOptKey = loggerOpt
+func WithLoggerOpt(ctx context.Context, loggerOpt LoggerOpt) context.Context {
+	return context.WithValue(ctx, loggerOptKey, loggerOpt)
+}
+
+// GetLogger attempts to retrieve LoggerFn from context, returns it if found, otherwise returns no-op function
+func GetLogger(ctx context.Context) (LoggerFn, bool) {
+	logger, ok := ctx.Value(loggerKey).(LoggerFn)
+	if !ok {
+		logger = func(ctx context.Context, sigil Sigil, src fs.ObjectInfo, dst fs.ObjectInfo, err error) {}
+	}
+	return logger, ok
+}
+
+// GetLoggerOpt attempts to retrieve LoggerOpt from context, returns it if found, otherwise returns NewLoggerOpt()
+func GetLoggerOpt(ctx context.Context) LoggerOpt {
+	loggerOpt, ok := ctx.Value(loggerOptKey).(LoggerOpt)
+	if ok {
+		return loggerOpt
+	}
+	return NewLoggerOpt()
+}
+
+// WithSyncLogger starts a new logger with the options passed in and saves it to ctx for retrieval later
+func WithSyncLogger(ctx context.Context, opt LoggerOpt) context.Context {
+	ctx = WithLoggerOpt(ctx, opt)
+	return WithLogger(ctx, func(ctx context.Context, sigil Sigil, src fs.ObjectInfo, dst fs.ObjectInfo, err error) {
+		if opt.LoggerFn != nil {
+			opt.LoggerFn(ctx, sigil, src, dst, err)
+		} else {
+			SyncFprintf(opt.Combined, "%c %s\n", sigil, dst.Remote())
+		}
+	})
+}
+
+// NewLoggerOpt returns a new LoggerOpt struct with defaults
+func NewLoggerOpt() LoggerOpt {
+	opt := LoggerOpt{
+		Combined:     new(bytes.Buffer),
+		MissingOnSrc: new(bytes.Buffer),
+		MissingOnDst: new(bytes.Buffer),
+		Match:        new(bytes.Buffer),
+		Differ:       new(bytes.Buffer),
+		Error:        new(bytes.Buffer),
+		DestAfter:    new(bytes.Buffer),
+		JSON:         new(bytes.Buffer),
+	}
+	return opt
+}
+
+// Winner predicts which side (src or dst) should end up winning out on the dst.
+type Winner struct {
+	Obj  fs.ObjectInfo // the object that should exist on dst post-sync, if any
+	Side string        // whether the winning object was from the src or dst
+	Err  error         // whether there's an error preventing us from predicting winner correctly (not whether there was a sync error more generally)
+}
+
+// WinningSide can be called in a LoggerFn to predict what the dest will look like post-sync
+//
+// This attempts to account for every case in which dst (intentionally) does not match src after a sync.
+//
+// Known issues / cases we can't confidently predict yet:
+//
+//	--max-duration / CutoffModeHard
+//	--compare-dest / --copy-dest (because equal() is called multiple times for the same file)
+//	server-side moves of an entire dir at once (because we never get the individual file objects in the dir)
+//	High-level retries, because there would be dupes (use --retries 1 to disable)
+//	Possibly some error scenarios
+func WinningSide(ctx context.Context, sigil Sigil, src fs.ObjectInfo, dst fs.ObjectInfo, err error) Winner {
+	winner := Winner{nil, "none", nil}
+	opt := GetLoggerOpt(ctx)
+	ci := fs.GetConfig(ctx)
+
+	if err == fs.ErrorIsDir {
+		winner.Err = err
+		if sigil == MissingOnSrc {
+			if (opt.DeleteModeOff || ci.DryRun) && dst != nil {
+				winner.Obj = dst
+				winner.Side = "dst" // whatever's on dst will remain so after DryRun
+				return winner
+			}
+			return winner // none, because dst should just get deleted
+		}
+			if sigil == MissingOnDst && ci.DryRun {
+				return winner // none, because it does not currently exist on dst, and will still not exist after DryRun
+			} else if ci.DryRun && dst != nil {
+				winner.Obj = dst
+				winner.Side = "dst"
+			} else if src != nil {
+				winner.Obj = src
+				winner.Side = "src"
+			}
+		return winner
+	}
+
+	_, srcOk := src.(fs.Object)
+	_, dstOk := dst.(fs.Object)
+	if !srcOk && !dstOk {
+		return winner // none, because we don't have enough info to continue.
+	}
+
+	switch sigil {
+	case MissingOnSrc:
+		if opt.DeleteModeOff || ci.DryRun { // i.e. it's a copy, not sync (or it's a DryRun)
+			winner.Obj = dst
+			winner.Side = "dst" // whatever's on dst will remain so after DryRun
+			return winner
+		}
+		return winner // none, because dst should just get deleted
+	case Match, Differ, MissingOnDst:
+		if sigil == MissingOnDst && ci.DryRun {
+			return winner // none, because it does not currently exist on dst, and will still not exist after DryRun
+		}
+		winner.Obj = src
+		winner.Side = "src" // presume dst will end up matching src unless changed below
+		if sigil == Match && (ci.SizeOnly || ci.CheckSum || ci.IgnoreSize || ci.UpdateOlder || ci.NoUpdateModTime) {
+			winner.Obj = dst
+			winner.Side = "dst" // ignore any differences with src because of user flags
+		}
+		if ci.IgnoreTimes {
+			winner.Obj = src
+			winner.Side = "src" // copy src to dst unconditionally
+		}
+		if (sigil == Match || sigil == Differ) && (ci.IgnoreExisting || ci.Immutable) {
+			winner.Obj = dst
+			winner.Side = "dst" // dst should remain unchanged if it already exists (and we know it does because it's Match or Differ)
+		}
+		if ci.DryRun {
+			winner.Obj = dst
+			winner.Side = "dst" // dst should remain unchanged after DryRun (note that we handled MissingOnDst earlier)
+		}
+		return winner
+	case TransferError:
+		winner.Obj = dst
+		winner.Side = "dst" // usually, dst should not change if there's an error
+		if dst == nil {
+			winner.Obj = src
+			winner.Side = "src" // but if for some reason we have a src and not a dst, go with it
+		}
+		if winner.Obj != nil {
+			if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, errors.New("max transfer duration reached as set by --max-duration")) {
+				winner.Err = err // we can't confidently predict what survives if CutoffModeHard
+			}
+			return winner // we know at least one of the objects
+		}
+	}
+	// should only make it this far if it's TransferError and both src and dst are nil
+	winner.Side = "none"
+	winner.Err = fmt.Errorf("unknown case -- can't determine winner. %v", err)
+	fs.Debugf(winner.Obj, "%v", winner.Err)
+	return winner
+}
+
+// DirObjInfo implements fs.ObjectInfo so that logger can log dirs
+type DirObjInfo struct {
+	DirEntry fs.DirEntry
+	DirFs    fs.Fs
+}
+
+// Fs returns read only access to the Fs that this object is part of
+func (dir DirObjInfo) Fs() fs.Info {
+	return dir.DirFs
+}
+
+// Hash just returns "", because this is a directory.
+func (dir DirObjInfo) Hash(ctx context.Context, ty hash.Type) (string, error) {
+	return "", nil
+}
+
+// Storable says whether this object can be stored
+func (dir DirObjInfo) Storable() bool {
+	return true
+}
+
+// String returns a description of the Object
+func (dir DirObjInfo) String() string {
+	return dir.DirEntry.String()
+}
+
+// Remote returns the remote path
+func (dir DirObjInfo) Remote() string {
+	return dir.DirEntry.Remote()
+}
+
+// ModTime returns the modification date of the directory
+// It should return a best guess if one isn't available
+func (dir DirObjInfo) ModTime(ctx context.Context) time.Time {
+	return dir.DirEntry.ModTime(ctx)
+}
+
+// Size returns the size of the directory
+func (dir DirObjInfo) Size() int64 {
+	return dir.DirEntry.Size()
+}
+
+// DirToObjInfo converts an fs.DirEntry to DirObjInfo
+func DirToObjInfo(entry fs.DirEntry, fs fs.Fs) DirObjInfo {
+	return DirObjInfo{DirEntry: entry, DirFs: fs}
 }
