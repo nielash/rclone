@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"regexp"
@@ -22,13 +23,16 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rclone/rclone/cmd"
 	"github.com/rclone/rclone/cmd/bisync"
 	"github.com/rclone/rclone/cmd/bisync/bilib"
+	"github.com/rclone/rclone/cmd/hashsum"
 	"github.com/rclone/rclone/fs"
 	"github.com/rclone/rclone/fs/accounting"
 	"github.com/rclone/rclone/fs/cache"
 	"github.com/rclone/rclone/fs/filter"
 	"github.com/rclone/rclone/fs/fspath"
+	"github.com/rclone/rclone/fs/hash"
 	"github.com/rclone/rclone/fs/object"
 	"github.com/rclone/rclone/fs/operations"
 	"github.com/rclone/rclone/fs/sync"
@@ -1269,4 +1273,242 @@ func (b *bisyncTest) logPrintf(text string, args ...interface{}) {
 		_, err := fmt.Fprintln(b.logFile, line)
 		require.NoError(b.t, err, "writing log file")
 	}
+}
+
+// quick test of whether the final output files from the tests match expected checksums
+// ignoring the logs which tend to be noisy with unimportant differences
+func TestBisyncResults(t *testing.T) {
+	t.Skip("Skipping test for debugging") // TODO
+
+	ctx := context.Background()
+	fstest.Initialise()
+
+	ci := fs.GetConfig(ctx)
+	ciSave := *ci
+	defer func() {
+		*ci = ciSave
+	}()
+	if *argRefreshTimes {
+		ci.RefreshTimes = true
+	}
+
+	baseDir, err := os.Getwd()
+	require.NoError(t, err, "get current directory")
+	randName := "bisync." + time.Now().Format("150405-") + random.String(5)
+	tempDir := filepath.Join(os.TempDir(), randName)
+	workDir := filepath.Join(tempDir, "workdir")
+
+	b := &bisyncTest{
+		// per-test state
+		t: t,
+		// global state
+		tempDir:  tempDir,
+		randName: randName,
+		workDir:  workDir,
+		dataRoot: filepath.Join(baseDir, "testdata"),
+		logDir:   filepath.Join(tempDir, "logs"),
+		logPath:  filepath.Join(workDir, logFileName),
+		// global flags
+		argRemote1: *fstest.RemoteName,
+		argRemote2: *argRemote2,
+		noCompare:  true,
+		noCleanup:  true,
+		golden:     *argGolden,
+		debug:      *argDebug,
+		stopAt:     *argStopAt,
+	}
+
+	b.mkdir(b.tempDir)
+	b.mkdir(b.logDir)
+
+	fnHandle := atexit.Register(func() {
+		if atexit.Signalled() {
+			b.cleanupAll()
+		}
+	})
+	defer func() {
+		b.cleanupAll()
+		atexit.Unregister(fnHandle)
+	}()
+
+	argCase := *argTestCase
+	if argCase == "" {
+		argCase = "all"
+		if testing.Short() {
+			// remote tests can be long, help with "go test -short"
+			argCase = "basic"
+		}
+	}
+
+	testList := strings.Split(argCase, ",")
+	if strings.ToLower(argCase) == "all" {
+		testList = nil
+		for _, testCase := range b.listDir(b.dataRoot) {
+			if strings.HasPrefix(testCase, "test_") {
+				testList = append(testList, testCase)
+			}
+		}
+	}
+	require.False(t, b.stopAt > 0 && len(testList) > 1, "-stop-at is meaningful only for a single test")
+
+	for _, testCase := range testList {
+		testCase = strings.ReplaceAll(testCase, "-", "_")
+		testCase = strings.TrimPrefix(testCase, "test_")
+		t.Run(testCase, func(childTest *testing.T) {
+			b.runTestCase(ctx, childTest, testCase)
+		})
+	}
+
+	SumFile := SumFile(ctx, tempDir)
+	fmt.Printf("%s", SumFile)
+	fmt.Printf("%s", tempDir+"/workdir/sums.txt")
+	// GoldenizeSumfile(tempDir+"/workdir/sums.txt", b.dataRoot) // TODO: cmd flag for this
+	goldenFile := filepath.Join(b.dataRoot, "sums.txt")
+	Check := CheckSumFile(ctx, tempDir, goldenFile)
+	fmt.Printf("%s", Check)
+	bisync.DiffFiles(goldenFile, tempDir+"/workdir/sums.txt", "golden", "current", "-y --suppress-common-lines")
+	// assert.NoError(b.t, Check)
+}
+
+func SumFile(ctx context.Context, tempDir string) error {
+	hashsum.HashsumOutfile = tempDir + "/workdir/sums.txt"
+	ctx, filter := filter.AddConfig(ctx)
+	_ = filter.Add(false, "/workdir/")
+	_ = filter.Add(false, "/logs/")
+	_ = filter.Add(false, ".DS_Store")
+	args := []string{tempDir}
+	fsrc := cmd.NewFsSrc(args)
+	output, close, err := hashsum.GetHashsumOutput(hashsum.HashsumOutfile)
+	if err != nil {
+		return err
+	}
+	defer close()
+	err = operations.HashLister(ctx, hash.MD5, hashsum.OutputBase64, hashsum.DownloadFlag, fsrc, output)
+	SortAndSave(hashsum.HashsumOutfile)
+	return err
+}
+
+func CheckSumFile(ctx context.Context, tempDir, ChecksumFile string) error {
+	ctx, filter := filter.AddConfig(ctx)
+	_ = filter.Add(false, "/workdir/")
+	_ = filter.Add(false, "/logs/")
+	_ = filter.Add(false, ".DS_Store")
+	args := []string{tempDir}
+	fsrc := cmd.NewFsSrc(args)
+	fsum, sumFile := cmd.NewFsFile(ChecksumFile)
+	return operations.CheckSum(ctx, fsrc, fsum, sumFile, hash.MD5, nil, hashsum.DownloadFlag)
+}
+
+func GoldenizeSumfile(file, goldenDir string) error {
+	err := bilib.CopyFile(file, filepath.Join(goldenDir, "sums.txt"))
+	return err
+}
+
+func SortAndSave(file string) {
+	cmd := exec.Command("bash", "-c", fmt.Sprintf(`sort %s -o %s`, file, file))
+	out, _ := cmd.Output()
+	_, _ = os.Stdout.Write(out)
+}
+
+func TestBisyncLogger(t *testing.T) {
+	t.Skip("Skipping test for debugging") // TODO
+
+	ctx := context.Background()
+	fstest.Initialise()
+
+	ci := fs.GetConfig(ctx)
+	ciSave := *ci
+	defer func() {
+		*ci = ciSave
+	}()
+	if *argRefreshTimes {
+		ci.RefreshTimes = true
+	}
+
+	baseDir, err := os.Getwd()
+	require.NoError(t, err, "get current directory")
+	randName := "bisync." + time.Now().Format("150405-") + random.String(5)
+	tempDir := filepath.Join(os.TempDir(), randName)
+	workDir := filepath.Join(tempDir, "workdir")
+
+	b := &bisyncTest{
+		// per-test state
+		t: t,
+		// global state
+		tempDir:  tempDir,
+		randName: randName,
+		workDir:  workDir,
+		dataRoot: filepath.Join(baseDir, "testdata"),
+		logDir:   filepath.Join(tempDir, "logs"),
+		logPath:  filepath.Join(workDir, logFileName),
+		// global flags
+		argRemote1: *fstest.RemoteName,
+		argRemote2: *argRemote2,
+		noCompare:  true,
+		noCleanup:  true,
+		golden:     *argGolden,
+		debug:      *argDebug,
+		stopAt:     *argStopAt,
+	}
+
+	b.mkdir(b.tempDir)
+	b.mkdir(b.logDir)
+
+	fnHandle := atexit.Register(func() {
+		if atexit.Signalled() {
+			b.cleanupAll()
+		}
+	})
+	defer func() {
+		b.cleanupAll()
+		atexit.Unregister(fnHandle)
+	}()
+
+	argCase := *argTestCase
+	if argCase == "" {
+		argCase = "all"
+		if testing.Short() {
+			// remote tests can be long, help with "go test -short"
+			argCase = "basic"
+		}
+	}
+
+	testList := strings.Split(argCase, ",")
+	if strings.ToLower(argCase) == "all" {
+		testList = nil
+		for _, testCase := range b.listDir(b.dataRoot) {
+			if strings.HasPrefix(testCase, "test_") {
+				testList = append(testList, testCase)
+			}
+		}
+	}
+	require.False(t, b.stopAt > 0 && len(testList) > 1, "-stop-at is meaningful only for a single test")
+
+	for _, testCase := range testList {
+		testCase = strings.ReplaceAll(testCase, "-", "_")
+		testCase = strings.TrimPrefix(testCase, "test_")
+		t.Run(testCase, func(childTest *testing.T) {
+			b.runTestCase(ctx, childTest, testCase)
+			b.CheckLogger(ctx, t)
+		})
+	}
+	cmd := exec.Command("bash", "-c", fmt.Sprintf(`open -a "Visual Studio Code" %s`, b.tempDir))
+	_, _ = cmd.Output()
+}
+
+func (b *bisyncTest) CheckLogger(fctx context.Context, t *testing.T) {
+	new1 := filepath.Join(b.workDir, b.sessionName+".path1.lst")
+	new2 := filepath.Join(b.workDir, b.sessionName+".path1.lst")
+	control1 := new1 + "-control"
+	control2 := new2 + "-control"
+
+	bisync.DiffFiles(control1, new1, "Path1 Control", "Path1 New", "-y --suppress-common-lines")
+	bisync.DiffFiles(control2, new2, "Path2 Control", "Path2 New", "-y --suppress-common-lines")
+	bisync.DiffFiles(new1, new2, "Path1 New", "Path2 New", "-y --suppress-common-lines")
+
+	b.mkdir(filepath.Join(b.tempDir, "diffs", b.testCase))
+	_ = bilib.CopyFile(new1, filepath.Join(b.tempDir, "diffs", b.testCase, "new1.txt"))
+	_ = bilib.CopyFile(new2, filepath.Join(b.tempDir, "diffs", b.testCase, "new2.txt"))
+	_ = bilib.CopyFile(control1, filepath.Join(b.tempDir, "diffs", b.testCase, "control1.txt"))
+	_ = bilib.CopyFile(control2, filepath.Join(b.tempDir, "diffs", b.testCase, "control2.txt"))
 }
