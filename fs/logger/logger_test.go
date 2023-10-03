@@ -2,6 +2,7 @@ package logger_test
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/rclone/rclone/fs/logger"
@@ -24,8 +25,8 @@ func TestLogger(t *testing.T) {
 	testscript.Run(t, testscript.Params{
 		Dir: "testdata/script",
 		Setup: func(env *testscript.Env) error {
-			env.Setenv("SRC", "$WORK/src")
-			env.Setenv("DST", "$WORK/dst")
+			env.Setenv("SRC", filepath.Join("$WORK", "src"))
+			env.Setenv("DST", filepath.Join("$WORK", "dst"))
 			return nil
 		},
 	})

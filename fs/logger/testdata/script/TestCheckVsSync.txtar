@@ -43,6 +43,6 @@ cmp $WORK/CHECKdiffer.txt $WORK/SYNCdiffer.txt
 
 # verify accuracy
 exec rclone check $SRC $DST
-exec diff -ryax '.*' --suppress-common-lines $SRC $DST
-exec rsync -aEvhPu $SRC/ $WORK/rsyncDst
-exec rclone check $DST $WORK/rsyncDst
+exec diff -rya --suppress-common-lines $SRC $DST
+[!windows] exec rsync -aEvhPu $SRC/ $WORK/rsyncDst
+[!windows] exec rclone check $DST $WORK/rsyncDst
