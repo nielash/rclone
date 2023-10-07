@@ -137,8 +137,9 @@ func (b *bisyncRun) checkconflicts(ctxCheck context.Context, filterCheck *filter
 }
 
 // findDeltas
-func (b *bisyncRun) findDeltas(fctx context.Context, f fs.Fs, oldListing, newListing, msg string) (ds *deltaSet, err error) {
-	var old, now *fileList
+func (b *bisyncRun) findDeltas(fctx context.Context, f fs.Fs, oldListing string, now *fileList, msg string) (ds *deltaSet, err error) {
+	var old *fileList
+	newListing := oldListing + "-new"
 
 	old, err = b.loadListing(oldListing)
 	if err != nil {
@@ -150,7 +151,6 @@ func (b *bisyncRun) findDeltas(fctx context.Context, f fs.Fs, oldListing, newLis
 		return
 	}
 
-	now, err = b.makeListing(fctx, f, newListing)
 	if err == nil {
 		err = b.checkListing(now, newListing, "current "+msg)
 	}
