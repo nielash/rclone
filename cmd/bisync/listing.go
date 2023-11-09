@@ -20,7 +20,6 @@ import (
 	"github.com/rclone/rclone/fs/hash"
 	"github.com/rclone/rclone/fs/operations"
 	"golang.org/x/exp/slices"
-	"golang.org/x/text/unicode/norm"
 )
 
 // ListingHeader defines first line of a listing
@@ -398,18 +397,6 @@ func ConvertPrecision(Modtime time.Time, dst fs.Fs) time.Time {
 	return Modtime
 }
 
-// ApplyTransforms handles unicode and case normalization
-func ApplyTransforms(ctx context.Context, dst fs.Fs, s string) string {
-	ci := fs.GetConfig(ctx)
-	if !ci.NoUnicodeNormalization {
-		s = norm.NFC.String(s)
-	}
-	if ci.IgnoreCaseSync || dst.Features().CaseInsensitive {
-		s = strings.ToLower(s)
-	}
-	return s
-}
-
 // modifyListing will modify the listing based on the results of the sync
 func (b *bisyncRun) modifyListing(ctx context.Context, src fs.Fs, dst fs.Fs, results []Results, queues queues, is1to2 bool) (err error) {
 	queue := queues.copy2to1
@@ -434,18 +421,6 @@ func (b *bisyncRun) modifyListing(ctx context.Context, src fs.Fs, dst fs.Fs, res
 	if err != nil {
 		return fmt.Errorf("cannot read prior listing: %w", err)
 	}
-	dstListNew, err := b.loadListing(dstListing + "-new")
-	if err != nil {
-		return fmt.Errorf("cannot read new listing: %w", err)
-	}
-	// for resync only, dstListNew will be empty, so need to use results instead
-	if b.opt.Resync {
-		for _, result := range results {
-			if result.Name != "" && result.IsDst {
-				dstListNew.put(result.Name, result.Size, result.Modtime, result.Hash, "-", result.Flags)
-			}
-		}
-	}
 
 	srcWinners := newFileList()
 	dstWinners := newFileList()
@@ -455,6 +430,10 @@ func (b *bisyncRun) modifyListing(ctx context.Context, src fs.Fs, dst fs.Fs, res
 	for _, result := range results {
 		if result.Name == "" {
 			continue
+		}
+
+		if result.AltName != "" {
+			b.aliases.Add(result.Name, result.AltName)
 		}
 
 		if result.Flags == "d" && !b.opt.CreateEmptySrcDirs {
@@ -482,6 +461,7 @@ func (b *bisyncRun) modifyListing(ctx context.Context, src fs.Fs, dst fs.Fs, res
 		}
 	}
 
+	ci := fs.GetConfig(ctx)
 	updateLists := func(side string, winners, list *fileList) {
 		for _, queueFile := range queue.ToList() {
 			if !winners.has(queueFile) && list.has(queueFile) && !errors.has(queueFile) {
@@ -492,28 +472,17 @@ func (b *bisyncRun) modifyListing(ctx context.Context, src fs.Fs, dst fs.Fs, res
 				// copies to side
 				new := winners.get(queueFile)
 
-				// handle normalization according to settings
-				ci := fs.GetConfig(ctx)
-				if side == "dst" && (!ci.NoUnicodeNormalization || ci.IgnoreCaseSync || dst.Features().CaseInsensitive) {
-					// search list for existing file that matches queueFile when normalized
-					normalizedName := ApplyTransforms(ctx, dst, queueFile)
-					matchFound := false
-					matchedName := ""
-					for _, filename := range dstListNew.list {
-						if ApplyTransforms(ctx, dst, filename) == normalizedName {
-							matchFound = true
-							matchedName = filename // original, not normalized
-							break
-						}
-					}
-					if matchFound && matchedName != queueFile {
+				// handle normalization
+				if side == "dst" {
+					alias := b.aliases.Alias(queueFile)
+					if alias != queueFile {
 						// use the (non-identical) existing name, unless --fix-case
 						if ci.FixCase {
-							fs.Debugf(direction, "removing %s and adding %s as --fix-case was specified", matchedName, queueFile)
-							list.remove(matchedName)
+							fs.Debugf(direction, "removing %s and adding %s as --fix-case was specified", alias, queueFile)
+							list.remove(alias)
 						} else {
-							fs.Debugf(direction, "casing/unicode difference detected. using %s instead of %s", matchedName, queueFile)
-							queueFile = matchedName
+							fs.Debugf(direction, "casing/unicode difference detected. using %s instead of %s", alias, queueFile)
+							queueFile = alias
 						}
 					}
 				}
