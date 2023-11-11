@@ -14,6 +14,7 @@ import (
 	"github.com/rclone/rclone/fs/filter"
 	"github.com/rclone/rclone/fs/operations"
 	"github.com/rclone/rclone/fs/sync"
+	"github.com/rclone/rclone/lib/terminal"
 )
 
 // Results represents a pair of synced files, as reported by the LoggerFn
@@ -182,6 +183,16 @@ func (b *bisyncRun) fastCopy(ctx context.Context, fsrc, fdst fs.Fs, files bilib.
 	}
 
 	return getResults, err
+}
+
+func (b *bisyncRun) retryFastCopy(ctx context.Context, fsrc, fdst fs.Fs, files bilib.Names, queueName string, results []Results, err error) ([]Results, error) {
+	if err != nil && b.opt.Resilient && b.opt.Retries > 1 {
+		for tries := 1; tries <= b.opt.Retries; tries++ {
+			fs.Logf("copy2to1", Color(terminal.YellowFg, "Received error: %v - retrying as --resilient is set. Retry %d/%d"), err, tries, b.opt.Retries)
+			results, err = b.fastCopy(ctx, b.fs2, b.fs1, files, queueName)
+		}
+	}
+	return results, err
 }
 
 func (b *bisyncRun) resyncDir(ctx context.Context, fsrc, fdst fs.Fs) ([]Results, error) {
