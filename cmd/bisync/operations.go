@@ -67,6 +67,8 @@ func Bisync(ctx context.Context, fs1, fs2 fs.Fs, optArg *Options) (err error) {
 	if opt.Workdir == "" {
 		opt.Workdir = DefaultWorkdir
 	}
+	ci := fs.GetConfig(ctx)
+	opt.OrigBackupDir = ci.BackupDir
 
 	if !opt.DryRun && !opt.Force {
 		if fs1.Precision() == fs.ModTimeNotSupported {
@@ -80,7 +82,6 @@ func Bisync(ctx context.Context, fs1, fs2 fs.Fs, optArg *Options) (err error) {
 	// Google Docs warnings
 	driveFs1, isDrive1 := fs1.(*drive.Fs)
 	driveFs2, isDrive2 := fs1.(*drive.Fs)
-	ci := fs.GetConfig(ctx)
 	if (isDrive1 || isDrive2) && (ci.CheckSum || ci.SizeOnly) {
 		needGdocsWarning := false
 		if isDrive1 {
@@ -378,7 +379,9 @@ func (b *bisyncRun) runLocked(octx context.Context) (err error) {
 	// Optional rmdirs for empty directories
 	if opt.RemoveEmptyDirs {
 		fs.Infof(nil, "Removing empty directories")
+		fctx = b.setBackupDir(fctx, 1)
 		err1 := operations.Rmdirs(fctx, b.fs1, "", true)
+		fctx = b.setBackupDir(fctx, 2)
 		err2 := operations.Rmdirs(fctx, b.fs2, "", true)
 		err := err1
 		if err == nil {
@@ -465,6 +468,8 @@ func (b *bisyncRun) resync(octx, fctx context.Context) error {
 	}
 	ci := fs.GetConfig(ctxSync)
 	ci.IgnoreExisting = true
+	ctxSync = b.setBackupDir(ctxSync, 1)
+	// 2 to 1
 	if results2to1, err = b.resyncDir(ctxSync, b.fs2, b.fs1); err != nil {
 		b.critical = true
 		return err
@@ -472,6 +477,8 @@ func (b *bisyncRun) resync(octx, fctx context.Context) error {
 
 	b.indent("Path1", "Path2", "Resync is copying UNIQUE OR DIFFERING files to")
 	ci.IgnoreExisting = false
+	ctxSync = b.setBackupDir(ctxSync, 2)
+	// 1 to 2
 	if results1to2, err = b.resyncDir(ctxSync, b.fs1, b.fs2); err != nil {
 		b.critical = true
 		return err
@@ -600,4 +607,18 @@ func (b *bisyncRun) handleErr(o interface{}, msg string, err error, critical, re
 			fs.Infof(o, "%s: %v", msg, err)
 		}
 	}
+}
+
+// setBackupDir overrides --backup-dir with path-specific version, if set, in each direction
+func (b *bisyncRun) setBackupDir(ctx context.Context, destPath int) context.Context {
+	ci := fs.GetConfig(ctx)
+	ci.BackupDir = b.opt.OrigBackupDir
+	if destPath == 1 && b.opt.BackupDir1 != "" {
+		ci.BackupDir = b.opt.BackupDir1
+	}
+	if destPath == 2 && b.opt.BackupDir2 != "" {
+		ci.BackupDir = b.opt.BackupDir1
+	}
+	fs.Debugf(ci.BackupDir, "updated backup-dir for Path%d", destPath)
+	return ctx
 }
