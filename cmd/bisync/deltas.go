@@ -264,6 +264,7 @@ func (b *bisyncRun) applyDeltas(ctx context.Context, ds1, ds2 *deltaSet) (change
 	// check is a read-only operation by its nature, so it's already "dry" in that sense.
 	ctxNew, ciCheck := fs.AddConfig(ctx)
 	ciCheck.DryRun = false
+	ciCheck.NoUpdateModTime = true
 
 	ctxCheck, filterCheck := filter.AddConfig(ctxNew)
 

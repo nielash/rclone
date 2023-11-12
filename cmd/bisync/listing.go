@@ -613,6 +613,10 @@ func (b *bisyncRun) recheck(ctxRecheck context.Context, src, dst fs.Fs, srcList,
 		fs.Debugf(srcObj, "rechecking")
 		for _, dstObj := range dstObjs {
 			if srcObj.Remote() == dstObj.Remote() || srcObj.Remote() == b.aliases.Alias(dstObj.Remote()) {
+				// note: Equal() normally updates the modtime in dest if sums match but modtimes don't.
+				// we disable that here.
+				ci := fs.GetConfig(ctxRecheck)
+				ci.NoUpdateModTime = true
 				if operations.Equal(ctxRecheck, srcObj, dstObj) || b.opt.DryRun {
 					putObj(srcObj, src, srcList)
 					putObj(dstObj, dst, dstList)
