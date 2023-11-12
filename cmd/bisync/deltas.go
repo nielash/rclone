@@ -342,6 +342,7 @@ func (b *bisyncRun) applyDeltas(ctx context.Context, ds1, ds2 *deltaSet) (change
 					} else {
 						fs.Debugf(nil, "Files are NOT equal: %s", file)
 						b.indent("!Path1", p1+"..path1", "Renaming Path1 copy")
+						ctxMove = b.setBackupDir(ctxMove, 1) // in case already a file with new name
 						if err = operations.MoveFile(ctxMove, b.fs1, b.fs1, file+"..path1", file); err != nil {
 							err = fmt.Errorf("path1 rename failed for %s: %w", p1, err)
 							b.critical = true
@@ -356,6 +357,7 @@ func (b *bisyncRun) applyDeltas(ctx context.Context, ds1, ds2 *deltaSet) (change
 						copy1to2.Add(file + "..path1")
 
 						b.indent("!Path2", p2+"..path2", "Renaming Path2 copy")
+						ctxMove = b.setBackupDir(ctxMove, 2) // in case already a file with new name
 						if err = operations.MoveFile(ctxMove, b.fs2, b.fs2, alias+"..path2", alias); err != nil {
 							err = fmt.Errorf("path2 rename failed for %s: %w", alias, err)
 							return
@@ -422,6 +424,7 @@ func (b *bisyncRun) applyDeltas(ctx context.Context, ds1, ds2 *deltaSet) (change
 	if copy2to1.NotEmpty() {
 		changes1 = true
 		b.indent("Path2", "Path1", "Do queued copies to")
+		ctx = b.setBackupDir(ctx, 1)
 		results2to1, err = b.fastCopy(ctx, b.fs2, b.fs1, copy2to1, "copy2to1")
 
 		// retries, if any
@@ -438,6 +441,7 @@ func (b *bisyncRun) applyDeltas(ctx context.Context, ds1, ds2 *deltaSet) (change
 	if copy1to2.NotEmpty() {
 		changes2 = true
 		b.indent("Path1", "Path2", "Do queued copies to")
+		ctx = b.setBackupDir(ctx, 2)
 		results1to2, err = b.fastCopy(ctx, b.fs1, b.fs2, copy1to2, "copy1to2")
 
 		// retries, if any
