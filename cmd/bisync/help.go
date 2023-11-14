@@ -41,6 +41,12 @@ var rcHelp = makeHelp(`This takes the following parameters
 - backupdir1 - --backup-dir for Path1. Must be a non-overlapping path on the same remote.
 - backupdir2 - --backup-dir for Path2. Must be a non-overlapping path on the same remote.
 - noCleanup - retain working files
+- gui - Whether to enable the bisync GUI. (default: false)
+- guiDir - Use custom dir to store GUI file. Accepts any rclone remote dir path (but local is recommended.) (default: --workdir)
+- guiRefresh - Interval for GUI HTML page auto-refresh. (default: 30s)
+- guiStats - Interval between printing stats to GUI, e.g. 500ms, 60s, 5m (0 to disable) (default: 30s)
+- guiMaxRows - Max number of rows to keep and display on GUI. (default: 50)
+- guiErrPop - Automatically open the GUI to alert if bisync errors. --gui-dir must be a local path. (default: false)
 
 See [bisync command help](https://rclone.org/commands/rclone_bisync/)
 and [full bisync description](https://rclone.org/bisync/)

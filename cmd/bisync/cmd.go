@@ -50,6 +50,12 @@ type Options struct {
 	Resilient             bool
 	TestFn                TestFunc // test-only option, for mocking errors
 	Retries               int
+	GUI                   bool
+	GUIDir                string
+	GUIRefreshInt         time.Duration
+	GUIStatsInt           time.Duration
+	GUIMaxRows            int
+	GUIErrPopup           bool
 }
 
 // Default values
@@ -108,6 +114,8 @@ var Opt Options
 
 func init() {
 	Opt.Retries = 3
+	Opt.GUIStatsInt = time.Second * 30
+	Opt.GUIRefreshInt = time.Second * 30
 	cmd.Root.AddCommand(commandDefinition)
 	cmdFlags := commandDefinition.Flags()
 	// when adding new flags, remember to also update the rc params:
@@ -128,6 +136,12 @@ func init() {
 	flags.BoolVarP(cmdFlags, &Opt.IgnoreListingChecksum, "ignore-listing-checksum", "", Opt.IgnoreListingChecksum, "Do not use checksums for listings (add --ignore-checksum to additionally skip post-copy checksum checks)", "")
 	flags.BoolVarP(cmdFlags, &Opt.Resilient, "resilient", "", Opt.Resilient, "Allow future runs to retry after certain less-serious errors, instead of requiring --resync. Use at your own risk!", "")
 	flags.IntVarP(cmdFlags, &Opt.Retries, "retries", "", Opt.Retries, "Retry operations this many times if they fail", "")
+	flags.BoolVarP(cmdFlags, &Opt.GUI, "gui", "", Opt.GUI, "Whether to enable the bisync GUI. (default: false)", "")
+	flags.StringVarP(cmdFlags, &Opt.GUIDir, "gui-dir", "", Opt.GUIDir, "Use custom dir to store GUI file. Accepts any rclone remote dir path (but local is recommended.) (default: --workdir)", "")
+	flags.DurationVarP(cmdFlags, &Opt.GUIRefreshInt, "gui-refresh", "", Opt.GUIRefreshInt, "Interval for GUI HTML page auto-refresh. (default: 30s)", "")
+	flags.DurationVarP(cmdFlags, &Opt.GUIStatsInt, "gui-stats", "", Opt.GUIStatsInt, "Interval between printing stats to GUI, e.g. 500ms, 60s, 5m (0 to disable) (default: 30s)", "")
+	flags.IntVarP(cmdFlags, &Opt.GUIMaxRows, "gui-max-rows", "", Opt.GUIMaxRows, "Max number of rows to keep and display on GUI. (default: 50)", "")
+	flags.BoolVarP(cmdFlags, &Opt.GUIErrPopup, "gui-err-pop", "", Opt.GUIErrPopup, "Automatically open the GUI to alert if bisync errors. --gui-dir must be a local path. (default: false)", "")
 }
 
 // bisync command definition

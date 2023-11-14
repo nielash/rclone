@@ -394,6 +394,10 @@ func (b *bisyncRun) applyDeltas(ctx context.Context, ds1, ds2 *deltaSet) (change
 		b.syncEmptyDirs(ctx, b.fs1, copy2to1, dirs2, &results2to1, "make")
 	}
 
+	// log half-way stats to GUI
+	b.GUIEvent.Status = "In Progress (Halfway done)"
+	b.gui(b.GUIEvent)
+
 	if copy1to2.NotEmpty() {
 		changes2 = true
 		b.indent("Path1", "Path2", "Do queued copies to")
