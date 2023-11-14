@@ -107,6 +107,14 @@ Optional Flags:
                                 (default: `~/.cache/rclone/bisync`)
       --backup-dir1 PATH        --backup-dir for Path1. Must be a non-overlapping path on the same remote.
       --backup-dir2 PATH        --backup-dir for Path2. Must be a non-overlapping path on the same remote.
+      --gui                     Whether to enable the bisync GUI. (default: false)
+      --gui-dir PATH            Use custom dir to store GUI file.
+                                  Accepts any rclone remote dir path (but local is recommended.) (default: --workdir)
+      --gui-refresh DURATION    Interval for GUI HTML page auto-refresh. (default: 30s)
+      --gui-stats DURATION      Interval between printing stats to GUI, e.g. 500ms, 60s, 5m (0 to disable) (default: 30s)
+      --gui-max-rows INT        Max number of rows to keep and display on GUI. (default: 50)
+      --gui-err-pop             Automatically open the GUI to alert if bisync errors.
+                                  --gui-dir must be a local path. (default: false)
   -n, --dry-run                 Go through the motions - No files are copied/deleted.
   -v, --verbose                 Increases logging verbosity.
                                 May be specified more than once for more details.
@@ -831,6 +839,34 @@ bisync scans these listings for `RCLONE_TEST` files.
 Any `RCLONE_TEST` files hidden by the `--filters-file` are _not_ in the
 listings and thus not checked during the check access phase.
 
+## GUI {#gui}
+
+`v.165` introduces a basic status dashboard GUI for bisync (disabled by
+default; `--gui` to enable). It is essentially a local HTML webpage that shows
+a table of your recent bisync runs, along with their status and some stats and
+other info ([see an example here](/img/bisync_status_example.html)). The main
+goal of the GUI is to make bisync a little friendlier to use headlessly (see
+[cron](#cron)) and see at a quick glance whether anything needs your attention,
+without having to go diving through log files.
+
+In this first version, the GUI is just a static read-only HTML page that bisync
+writes to at various points during a bisync run. In future versions it may
+become more interactive. Crucially, since it's just a static local file, there
+is no "server" or other networking required -- you can check it entirely
+offline, even when rclone is not running!
+
+It should load in any modern internet browser, and the URL remains constant for
+easy bookmarking. By default it lives in the `--workdir`, but you can set a
+custom directory with `--gui-dir`. The `--gui-dir` can even be another rclone
+remote (for example, you could keep it in Drive/Dropbox for checking
+on-the-go), but it is recommended to keep it on `local` for the best
+performance.
+
+Several parameters can be customized -- see the [command
+flags](#command-line-syntax) starting with `--gui`.
+
+[![bisync gui example screenshot](/img/bisync_gui_example_thumb.png)](/img/bisync_gui_example.png)
+
 ## Troubleshooting {#troubleshooting}
 
 ### Reading bisync logs
@@ -1369,6 +1405,7 @@ for performance improvements and less [risk of error](https://forum.rclone.org/t
 * Google Docs (and other files of unknown size) are now supported (with the same options as in `sync`)
 * Equality checks before a sync conflict rename now fall back to `cryptcheck` (when possible) or `--download`,
 instead of of `--size-only`, when `check` is not available.
+* A basic [GUI dashboard page](#gui) is now supported, to quickly check the status of recent scheduled Bisync runs.
 
 ### `v1.64`
 * Fixed an [issue](https://forum.rclone.org/t/bisync-bugs-and-feature-requests/37636#:~:text=1.%20Dry%20runs%20are%20not%20completely%20dry) 

@@ -80,6 +80,26 @@ func rcBisync(ctx context.Context, in rc.Params) (out rc.Params, err error) {
 	if opt.BackupDir2, err = in.GetString("backupdir2"); rc.NotErrParamNotFound(err) {
 		return
 	}
+	if opt.GUI, err = in.GetBool("gui"); rc.NotErrParamNotFound(err) {
+		return
+	}
+	if opt.GUIDir, err = in.GetString("guiDir"); rc.NotErrParamNotFound(err) {
+		return
+	}
+	if opt.GUIRefreshInt, err = in.GetDuration("guiRefresh"); rc.NotErrParamNotFound(err) {
+		return
+	}
+	if opt.GUIStatsInt, err = in.GetDuration("guiStats"); rc.NotErrParamNotFound(err) {
+		return
+	}
+	var int64 int64
+	if int64, err = in.GetInt64("guiMaxRows"); rc.NotErrParamNotFound(err) {
+		return
+	}
+	opt.GUIMaxRows = int(int64)
+	if opt.GUIErrPopup, err = in.GetBool("guiErrPop"); rc.NotErrParamNotFound(err) {
+		return
+	}
 
 	checkSync, err := in.GetString("checkSync")
 	if rc.NotErrParamNotFound(err) {

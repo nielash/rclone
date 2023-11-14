@@ -11,13 +11,17 @@ import (
 	"path/filepath"
 	"strconv"
 	gosync "sync"
+	"time"
 
 	"github.com/rclone/rclone/cmd/bisync/bilib"
 	"github.com/rclone/rclone/fs"
 	"github.com/rclone/rclone/fs/filter"
+	"github.com/rclone/rclone/fs/fspath"
 	"github.com/rclone/rclone/fs/operations"
 	"github.com/rclone/rclone/lib/atexit"
+	"github.com/rclone/rclone/lib/random"
 	"github.com/rclone/rclone/lib/terminal"
+	"github.com/skratchdot/open-golang/open"
 )
 
 // ErrBisyncAborted signals that bisync is aborted and forces exit code 2
@@ -40,6 +44,9 @@ type bisyncRun struct {
 	opt         *Options
 	octx        context.Context
 	fctx        context.Context
+	GUIEvent    GUIEvent
+	runID       string
+	GUIurl      string
 }
 
 type queues struct {
@@ -55,9 +62,11 @@ type queues struct {
 func Bisync(ctx context.Context, fs1, fs2 fs.Fs, optArg *Options) (err error) {
 	opt := *optArg // ensure that input is never changed
 	b := &bisyncRun{
-		fs1: fs1,
-		fs2: fs2,
-		opt: &opt,
+		fs1:   fs1,
+		fs2:   fs2,
+		opt:   &opt,
+		octx:  ctx,
+		runID: random.String(8),
 	}
 
 	if opt.CheckFilename == "" {
@@ -66,6 +75,14 @@ func Bisync(ctx context.Context, fs1, fs2 fs.Fs, optArg *Options) (err error) {
 	if opt.Workdir == "" {
 		opt.Workdir = DefaultWorkdir
 	}
+	if opt.GUIDir == "" {
+		opt.GUIDir = opt.Workdir
+	}
+	b.GUIurl = fspath.JoinRootPath(b.opt.GUIDir, "bisync_status.html")
+	if opt.GUIMaxRows == 0 {
+		opt.GUIMaxRows = 50
+	}
+
 	ci := fs.GetConfig(ctx)
 	opt.OrigBackupDir = ci.BackupDir
 
@@ -92,6 +109,10 @@ func Bisync(ctx context.Context, fs1, fs2 fs.Fs, optArg *Options) (err error) {
 	b.newListing1 = b.listing1 + "-new"
 	b.newListing2 = b.listing2 + "-new"
 	b.aliases = bilib.AliasMap{}
+	b.GUIEvent.Session = bilib.SessionName(b.fs1, b.fs2)
+	b.GUIEvent.Path1 = bilib.FsPath(b.fs1)
+	b.GUIEvent.Path2 = bilib.FsPath(b.fs2)
+	b.GUIEvent.RunID = b.runID
 
 	// Handle lock file
 	lockFile := ""
@@ -101,6 +122,11 @@ func Bisync(ctx context.Context, fs1, fs2 fs.Fs, optArg *Options) (err error) {
 			errTip := Color(terminal.MagentaFg, "Tip: this indicates that another bisync run (of these same paths) either is still running or was interrupted before completion. \n")
 			errTip += Color(terminal.MagentaFg, "If you're SURE you want to override this safety feature, you can delete the lock file with the following command, then run bisync again: \n")
 			errTip += fmt.Sprintf(Color(terminal.HiRedFg, "rclone deletefile \"%s\""), lockFile)
+			b.GUIEvent.Status = "Locked out by prior run"
+			b.GUIEvent.Icon = "⚠️"
+			b.GUIEvent.Start = time.Now()
+			b.GUIEvent.End = time.Now()
+			defer b.gui(b.GUIEvent)
 			return fmt.Errorf(Color(terminal.RedFg, "prior lock file found: %s \n")+errTip, Color(terminal.HiYellowFg, lockFile))
 		}
 
@@ -109,7 +135,19 @@ func Bisync(ctx context.Context, fs1, fs2 fs.Fs, optArg *Options) (err error) {
 			return fmt.Errorf("cannot create lock file: %s: %w", lockFile, err)
 		}
 		fs.Debugf(nil, "Lock file created: %s", lockFile)
+
+		if b.opt.GUI {
+			b.GUIEvent.Status = "In Progress"
+			b.GUIEvent.Start = time.Now()
+			b.GUIEvent.Icon = "🔄"
+			b.gui(b.GUIEvent)
+			fs.Infof(nil, "The GUI is running! Visit the following URL in your browser: \n%s", filepath.Join(b.opt.GUIDir, "bisync_status.html"))
+			if b.opt.Resync && bilib.IsLocalPath(b.GUIurl) {
+				_ = open.Start(b.GUIurl)
+			}
+		}
 	}
+	stopStats := b.StartStats(b.GUIEvent)
 
 	// Handle SIGINT
 	var finaliseOnce gosync.Once
@@ -147,6 +185,7 @@ func Bisync(ctx context.Context, fs1, fs2 fs.Fs, optArg *Options) (err error) {
 		}
 	}
 
+	stopStats()
 	if b.critical {
 		if b.retryable && b.opt.Resilient {
 			fs.Errorf(nil, Color(terminal.RedFg, "Bisync critical error: %v"), err)
@@ -161,6 +200,16 @@ func Bisync(ctx context.Context, fs1, fs2 fs.Fs, optArg *Options) (err error) {
 			fs.Errorf(nil, Color(terminal.RedFg, "Bisync critical error: %v"), err)
 			fs.Errorf(nil, Color(terminal.RedFg, "Bisync aborted. Must run --resync to recover."))
 		}
+		b.GUIEvent.Status = "Error: "
+		if err != nil {
+			b.GUIEvent.Status += err.Error()
+		}
+		b.GUIEvent.Icon = "❌"
+		b.GUIEvent.End = time.Now()
+		b.gui(b.GUIEvent)
+		if b.opt.GUI && b.opt.GUIErrPopup && bilib.IsLocalPath(b.GUIurl) {
+			_ = open.Start(b.GUIurl)
+		}
 		return ErrBisyncAborted
 	}
 	if b.abort {
@@ -168,6 +217,18 @@ func Bisync(ctx context.Context, fs1, fs2 fs.Fs, optArg *Options) (err error) {
 	}
 	if err == nil {
 		fs.Infof(nil, Color(terminal.GreenFg, "Bisync successful"))
+		b.GUIEvent.Status = "Completed Successfully"
+		b.GUIEvent.Icon = "✅"
+		b.GUIEvent.End = time.Now()
+		b.gui(b.GUIEvent)
+	} else {
+		b.GUIEvent.Status = "Error: " + err.Error()
+		b.GUIEvent.Icon = "❌"
+		b.GUIEvent.End = time.Now()
+		b.gui(b.GUIEvent)
+		if b.opt.GUI && b.opt.GUIErrPopup && bilib.IsLocalPath(b.GUIurl) {
+			_ = open.Start(b.GUIurl)
+		}
 	}
 	return err
 }

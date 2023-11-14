@@ -28,6 +28,7 @@ func (b *bisyncRun) indent(tag, file, msg string) {
 		logf = fs.Logf
 	}
 
+	b.GUIEvent.Details += fmt.Sprintf("- %-18s%-43s - %s\n", tag, msg, escapePath(file, false))
 	tag = Color(terminal.BlueFg, tag)
 	msg = Color(terminal.MagentaFg, msg)
 	file = Color(terminal.CyanFg, escapePath(file, false))
