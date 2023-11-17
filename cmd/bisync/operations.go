@@ -13,6 +13,7 @@ import (
 	gosync "sync"
 	"time"
 
+	"github.com/gen2brain/beeep"
 	"github.com/rclone/rclone/cmd/bisync/bilib"
 	"github.com/rclone/rclone/fs"
 	"github.com/rclone/rclone/fs/filter"
@@ -114,6 +115,11 @@ func Bisync(ctx context.Context, fs1, fs2 fs.Fs, optArg *Options) (err error) {
 	b.GUIEvent.Path2 = bilib.FsPath(b.fs2)
 	b.GUIEvent.RunID = b.runID
 
+	if b.opt.pushNotifyOpt.IsSet(NotifyStart) {
+		notifyMsg := fmt.Sprintf("Path1: %s \nPath2: %s ", bilib.FsPath(b.fs1), bilib.FsPath(b.fs2))
+		b.handleErr(nil, "Push Notification error", beeep.Notify("🔄 Bisync has started", notifyMsg, ""), false, true)
+	}
+
 	// Handle lock file
 	lockFile := ""
 	if !opt.DryRun {
@@ -126,6 +132,10 @@ func Bisync(ctx context.Context, fs1, fs2 fs.Fs, optArg *Options) (err error) {
 			b.GUIEvent.Icon = "⚠️"
 			b.GUIEvent.Start = time.Now()
 			b.GUIEvent.End = time.Now()
+			if b.opt.pushNotifyOpt.IsSet(NotifyEnd) || b.opt.pushNotifyOpt.IsSet(NotifyError) {
+				notifyMsg := fmt.Sprintf("Locked out by prior run. \n\nPath1: %s \nPath2: %s ", bilib.FsPath(b.fs1), bilib.FsPath(b.fs2))
+				defer b.handleErr(nil, "Push Notification error", beeep.Notify("⚠️ Bisync skipped", notifyMsg, ""), false, true)
+			}
 			defer b.gui(b.GUIEvent)
 			return fmt.Errorf(Color(terminal.RedFg, "prior lock file found: %s \n")+errTip, Color(terminal.HiYellowFg, lockFile))
 		}
@@ -210,6 +220,10 @@ func Bisync(ctx context.Context, fs1, fs2 fs.Fs, optArg *Options) (err error) {
 		if b.opt.GUI && b.opt.GUIErrPopup && bilib.IsLocalPath(b.GUIurl) {
 			_ = open.Start(b.GUIurl)
 		}
+		if b.opt.pushNotifyOpt.IsSet(NotifyEnd) || b.opt.pushNotifyOpt.IsSet(NotifyError) {
+			notifyMsg := fmt.Sprintf("Error: %s \n\nPath1: %s \nPath2: %s ", strconv.Quote(err.Error()), bilib.FsPath(b.fs1), bilib.FsPath(b.fs2))
+			b.handleErr(nil, "Push Notification error", beeep.Notify("❌ Bisync error!", notifyMsg, ""), false, true)
+		}
 		return ErrBisyncAborted
 	}
 	if b.abort {
@@ -221,6 +235,10 @@ func Bisync(ctx context.Context, fs1, fs2 fs.Fs, optArg *Options) (err error) {
 		b.GUIEvent.Icon = "✅"
 		b.GUIEvent.End = time.Now()
 		b.gui(b.GUIEvent)
+		if b.opt.pushNotifyOpt.IsSet(NotifyEnd) {
+			notifyMsg := fmt.Sprintf("Path1: %s \nPath2: %s ", bilib.FsPath(b.fs1), bilib.FsPath(b.fs2))
+			b.handleErr(nil, "Push Notification error", beeep.Notify("✅ Bisync finished successfully", notifyMsg, ""), false, true)
+		}
 	} else {
 		b.GUIEvent.Status = "Error: " + err.Error()
 		b.GUIEvent.Icon = "❌"
@@ -228,6 +246,10 @@ func Bisync(ctx context.Context, fs1, fs2 fs.Fs, optArg *Options) (err error) {
 		b.gui(b.GUIEvent)
 		if b.opt.GUI && b.opt.GUIErrPopup && bilib.IsLocalPath(b.GUIurl) {
 			_ = open.Start(b.GUIurl)
+		}
+		if b.opt.pushNotifyOpt.IsSet(NotifyEnd) || b.opt.pushNotifyOpt.IsSet(NotifyError) {
+			notifyMsg := fmt.Sprintf("Error: %s \n\nPath1: %s \nPath2: %s ", strconv.Quote(err.Error()), bilib.FsPath(b.fs1), bilib.FsPath(b.fs2))
+			b.handleErr(nil, "Push Notification error", beeep.Notify("❌ Bisync error!", notifyMsg, ""), false, true)
 		}
 	}
 	return err
