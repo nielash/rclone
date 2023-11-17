@@ -56,6 +56,7 @@ type Options struct {
 	GUIStatsInt           time.Duration
 	GUIMaxRows            int
 	GUIErrPopup           bool
+	pushNotifyOpt         PushNotifyFlags
 }
 
 // Default values
@@ -142,6 +143,8 @@ func init() {
 	flags.DurationVarP(cmdFlags, &Opt.GUIStatsInt, "gui-stats", "", Opt.GUIStatsInt, "Interval between printing stats to GUI, e.g. 500ms, 60s, 5m (0 to disable) (default: 30s)", "")
 	flags.IntVarP(cmdFlags, &Opt.GUIMaxRows, "gui-max-rows", "", Opt.GUIMaxRows, "Max number of rows to keep and display on GUI. (default: 50)", "")
 	flags.BoolVarP(cmdFlags, &Opt.GUIErrPopup, "gui-err-pop", "", Opt.GUIErrPopup, "Automatically open the GUI to alert if bisync errors. --gui-dir must be a local path. (default: false)", "")
+	flags.FVarP(cmdFlags, &Opt.pushNotifyOpt, "push-notify", "", "When to send push notifications, if supported: "+PushNotifyFlagsList+" (default: off)", "")
+	// TODO: rc params and docs for --push-notify
 }
 
 // bisync command definition
