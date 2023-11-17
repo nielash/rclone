@@ -161,7 +161,17 @@ Setting suffix to "none" will result in an empty suffix. This may be useful
 when the path length is critical.`,
 			Default:  ".bin",
 			Advanced: true,
-		}},
+		},
+			{
+				Name: "sum",
+				Help: `Force checksum support by generating them on the fly when requested.
+
+This requires downloading the entire file and hashing it locally,
+so it may be quite slow and use significant resources.
+If false (the default), crypt will not support checksums, other than for cryptcheck.`,
+				Default:  false,
+				Advanced: false,
+			}},
 	})
 }
 
@@ -287,6 +297,7 @@ type Options struct {
 	PassBadBlocks           bool   `config:"pass_bad_blocks"`
 	FilenameEncoding        string `config:"filename_encoding"`
 	Suffix                  string `config:"suffix"`
+	Sum                     bool   `config:"sum"` // --crypt-sum
 }
 
 // Fs represents a wrapped fs.Fs
@@ -503,6 +514,9 @@ func (f *Fs) PutStream(ctx context.Context, in io.Reader, src fs.ObjectInfo, opt
 
 // Hashes returns the supported hash sets.
 func (f *Fs) Hashes() hash.Set {
+	if f.opt.Sum {
+		return f.UnWrap().Hashes()
+	}
 	return hash.Set(hash.None)
 }
 
@@ -930,6 +944,60 @@ func (o *Object) Size() int64 {
 // Hash returns the selected checksum of the file
 // If no checksum is available it returns ""
 func (o *Object) Hash(ctx context.Context, ht hash.Type) (string, error) {
+
+	if o.f.opt.Sum {
+		// mostly copied from operations.HashSum
+		// essentially the reverse the approach of "cryptcheck".
+		// instead of re-encrypting source, we decrypt the dest
+		// this requires downloading the whole file and hashing locally after decrypting
+		// the resulting hash should exactly match that of the source.
+		// Another advantage over cryptcheck is that it can be used when we don't have the source.
+		// (For example, to compare two different crypt remotes with different passwords.)
+
+		var sum string
+		var err error
+
+		// Setup: Define accounting, open the file with NewReOpen to provide restarts, account for the transfer, and setup a multi-hasher with the appropriate type
+		// Execution: io.Copy file to hasher, get hash and encode in hex
+
+		tr := accounting.Stats(ctx).NewCheckingTransfer(o, "computing hash")
+		defer func() {
+			tr.Done(ctx, err)
+		}()
+
+		// Open with NewReOpen to provide restarts
+		var options []fs.OpenOption
+		for _, option := range fs.GetConfig(ctx).DownloadHeaders {
+			options = append(options, option)
+		}
+		in, err := o.Open(ctx, options...)
+		if err != nil {
+			return "ERROR", fmt.Errorf("failed to open file %v: %w", o, err)
+		}
+
+		// Account and buffer the transfer
+		in = tr.Account(ctx, in).WithBuffer()
+
+		// Setup hasher
+		hasher, err := hash.NewMultiHasherTypes(hash.NewHashSet(ht))
+		if err != nil {
+			return "UNSUPPORTED", fmt.Errorf("hash unsupported: %w", err)
+		}
+
+		// Copy to hasher, downloading the file and passing directly to hash
+		_, err = io.Copy(hasher, in)
+		if err != nil {
+			return "ERROR", fmt.Errorf("failed to copy file to hasher: %w", err)
+		}
+
+		// Get hash as hex or base64 encoded string
+		sum, err = hasher.SumString(ht, false)
+		if err != nil {
+			return "ERROR", fmt.Errorf("hasher returned an error: %w", err)
+		}
+		return sum, err
+	}
+
 	return "", hash.ErrUnsupported
 }
 
