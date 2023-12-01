@@ -820,6 +820,10 @@ func (b *bisyncTest) runBisync(ctx context.Context, args []string) (err error) {
 			require.NoError(b.t, err, "parsing max-delete=%q", val)
 		case "size-only":
 			ci.SizeOnly = true
+		case "ignore-size":
+			ci.IgnoreSize = true
+		case "checksum":
+			ci.CheckSum = true
 		case "subdir":
 			fs1 = addSubdir(b.path1, val)
 			fs2 = addSubdir(b.path2, val)

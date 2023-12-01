@@ -117,18 +117,10 @@ func (b *bisyncRun) setupListing() {
 	ls1 = newFileList()
 	ls2 = newFileList()
 
-	hashType1 := hash.None
-	hashType2 := hash.None
-	if !b.opt.IgnoreListingChecksum {
-		// Currently bisync just honors --ignore-listing-checksum
-		// (note that this is different from --ignore-checksum)
-		// TODO add full support for checksums and related flags
-		hashType1 = b.fs1.Hashes().GetOne()
-		hashType2 = b.fs2.Hashes().GetOne()
-	}
-
-	ls1.hash = hashType1
-	ls2.hash = hashType2
+	// note that --ignore-listing-checksum is different from --ignore-checksum
+	// and we already checked it when we set b.opt.Compare.HashType1 and 2
+	ls1.hash = b.opt.Compare.HashType1
+	ls2.hash = b.opt.Compare.HashType2
 }
 
 func (b *bisyncRun) ForObject(o fs.Object, isPath1 bool) {

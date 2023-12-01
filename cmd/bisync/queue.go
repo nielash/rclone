@@ -12,6 +12,7 @@ import (
 	"github.com/rclone/rclone/cmd/bisync/bilib"
 	"github.com/rclone/rclone/fs"
 	"github.com/rclone/rclone/fs/filter"
+	"github.com/rclone/rclone/fs/hash"
 	"github.com/rclone/rclone/fs/operations"
 	"github.com/rclone/rclone/fs/sync"
 	"github.com/rclone/rclone/lib/terminal"
@@ -40,7 +41,17 @@ var logger = operations.NewLoggerOpt()
 var lock mutex.Mutex
 var once mutex.Once
 var ignoreListingChecksum bool
+var hashTypes map[string]hash.Type
 var ci *fs.ConfigInfo
+
+// allows us to get the right hashtype during the LoggerFn without knowing whether it's Path1/Path2
+func getHashType(fname string) hash.Type {
+	ht, ok := hashTypes[fname]
+	if ok {
+		return ht
+	}
+	return hash.None
+}
 
 // FsPathIfAny handles type assertions and returns a formatted bilib.FsPath if valid, otherwise ""
 func FsPathIfAny(x fs.ObjectInfo) string {
@@ -105,7 +116,7 @@ func WriteResults(ctx context.Context, sigil operations.Sigil, src fs.ObjectInfo
 			result.Modtime = side.ModTime(ctx).In(time.UTC)
 
 			if !ignoreListingChecksum {
-				result.Hash, _ = side.Hash(ctx, side.Fs().Hashes().GetOne())
+				result.Hash, _ = side.Hash(ctx, getHashType(side.Fs().Name()))
 			}
 		}
 		result.IsWinner = result.Winner.Obj == side
@@ -171,6 +182,10 @@ func (b *bisyncRun) fastCopy(ctx context.Context, fsrc, fdst fs.Fs, files bilib.
 	}
 
 	ignoreListingChecksum = b.opt.IgnoreListingChecksum
+	hashTypes = map[string]hash.Type{
+		b.fs1.Name(): b.opt.Compare.HashType1,
+		b.fs2.Name(): b.opt.Compare.HashType2,
+	}
 	ci = fs.GetConfig(ctx)
 	logger.LoggerFn = WriteResults
 	ctxCopyLogger := operations.WithSyncLogger(ctxCopy, logger)
@@ -202,6 +217,10 @@ func (b *bisyncRun) retryFastCopy(ctx context.Context, fsrc, fdst fs.Fs, files b
 func (b *bisyncRun) resyncDir(ctx context.Context, fsrc, fdst fs.Fs) ([]Results, error) {
 	ci = fs.GetConfig(ctx)
 	ignoreListingChecksum = b.opt.IgnoreListingChecksum
+	hashTypes = map[string]hash.Type{
+		b.fs1.Name(): b.opt.Compare.HashType1,
+		b.fs2.Name(): b.opt.Compare.HashType2,
+	}
 	logger.LoggerFn = WriteResults
 	ctxCopyLogger := operations.WithSyncLogger(ctx, logger)
 	err := sync.CopyDir(ctxCopyLogger, fdst, fsrc, b.opt.CreateEmptySrcDirs)

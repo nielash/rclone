@@ -69,13 +69,9 @@ func Bisync(ctx context.Context, fs1, fs2 fs.Fs, optArg *Options) (err error) {
 	ci := fs.GetConfig(ctx)
 	opt.OrigBackupDir = ci.BackupDir
 
-	if !opt.DryRun && !opt.Force {
-		if fs1.Precision() == fs.ModTimeNotSupported {
-			return errors.New("modification time support is missing on path1")
-		}
-		if fs2.Precision() == fs.ModTimeNotSupported {
-			return errors.New("modification time support is missing on path2")
-		}
+	err = b.setCompareDefaults(ctx)
+	if err != nil {
+		return err
 	}
 
 	if b.workDir, err = filepath.Abs(opt.Workdir); err != nil {
@@ -517,6 +513,10 @@ func (b *bisyncRun) checkSync(listing1, listing2 string) error {
 		if !files2.has(file) && !files2.has(b.aliases.Alias(file)) {
 			b.indent("ERROR", file, "Path1 file not found in Path2")
 			ok = false
+		} else {
+			if !b.fileInfoEqual(file, files2.getTryAlias(file, b.aliases.Alias(file)), files1, files2) {
+				ok = false
+			}
 		}
 	}
 	for _, file := range files2.list {
@@ -525,6 +525,7 @@ func (b *bisyncRun) checkSync(listing1, listing2 string) error {
 			ok = false
 		}
 	}
+
 	if !ok {
 		return errors.New("path1 and path2 are out of sync, run --resync to recover")
 	}
