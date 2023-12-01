@@ -409,8 +409,10 @@ func (b *bisyncRun) modifyListing(ctx context.Context, src fs.Fs, dst fs.Fs, res
 	}
 
 	fs.Debugf(nil, "updating %s", direction)
-	fs.Debugf(nil, "RESULTS: %v", results)
-	fs.Debugf(nil, "QUEUE: %v", queue)
+	// fs.Debugf(nil, "RESULTS: %v", results)
+	prettyprint(results, "results", fs.LogLevelDebug)
+	// fs.Debugf(nil, "QUEUE: %v", queue)
+	prettyprint(queue, "queue", fs.LogLevelDebug)
 
 	srcListing, dstListing := b.getListingNames(is1to2)
 	srcList, err := b.loadListing(srcListing)
