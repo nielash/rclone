@@ -421,6 +421,11 @@ func (b *bisyncRun) modifyListing(ctx context.Context, src fs.Fs, dst fs.Fs, res
 	if err != nil {
 		return fmt.Errorf("cannot read prior listing: %w", err)
 	}
+	// set list hash type
+	if b.opt.Resync && !b.opt.IgnoreListingChecksum {
+		srcList.hash = src.Hashes().GetOne()
+		dstList.hash = dst.Hashes().GetOne()
+	}
 
 	srcWinners := newFileList()
 	dstWinners := newFileList()
