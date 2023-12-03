@@ -11,6 +11,7 @@ import (
 
 	"github.com/rclone/rclone/cmd/bisync/bilib"
 	"github.com/rclone/rclone/fs"
+	"github.com/rclone/rclone/fs/accounting"
 	"github.com/rclone/rclone/fs/filter"
 	"github.com/rclone/rclone/fs/hash"
 	"github.com/rclone/rclone/fs/operations"
@@ -35,6 +36,19 @@ type Results struct {
 	IsWinner bool
 	IsSrc    bool
 	IsDst    bool
+	Origin   string
+}
+
+// ResultsSlice is a slice of Results (obviously)
+type ResultsSlice []Results
+
+func (rs *ResultsSlice) has(name string) bool {
+	for _, r := range *rs {
+		if r.Name == name {
+			return true
+		}
+	}
+	return false
 }
 
 var logger = operations.NewLoggerOpt()
@@ -95,10 +109,11 @@ func WriteResults(ctx context.Context, sigil operations.Sigil, src fs.ObjectInfo
 
 	opt := operations.GetLoggerOpt(ctx)
 	result := Results{
-		Sigil: sigil,
-		Src:   FsPathIfAny(src),
-		Dst:   FsPathIfAny(dst),
-		Err:   err,
+		Sigil:  sigil,
+		Src:    FsPathIfAny(src),
+		Dst:    FsPathIfAny(dst),
+		Err:    err,
+		Origin: "sync",
 	}
 
 	result.Winner = operations.WinningSide(ctx, sigil, src, dst, err)
@@ -164,6 +179,9 @@ func ReadResults(results io.Reader) []Results {
 }
 
 func (b *bisyncRun) fastCopy(ctx context.Context, fsrc, fdst fs.Fs, files bilib.Names, queueName string) ([]Results, error) {
+	if b.InGracefulShutdown {
+		return nil, nil
+	}
 	if err := b.saveQueue(files, queueName); err != nil {
 		return nil, err
 	}
@@ -189,6 +207,9 @@ func (b *bisyncRun) fastCopy(ctx context.Context, fsrc, fdst fs.Fs, files bilib.
 	ci = fs.GetConfig(ctx)
 	logger.LoggerFn = WriteResults
 	ctxCopyLogger := operations.WithSyncLogger(ctxCopy, logger)
+	b.SyncCI = fs.GetConfig(ctxCopyLogger) // allows us to request graceful shutdown
+	accounting.MaxCompletedTransfers = -1  // we need a complete list in the event of graceful shutdown
+	ctxCopyLogger, b.CancelSync = context.WithCancel(ctxCopyLogger)
 	b.testFn()
 	err := sync.Sync(ctxCopyLogger, fdst, fsrc, b.opt.CreateEmptySrcDirs)
 	fs.Debugf(nil, "logger is: %v", logger)
@@ -205,7 +226,7 @@ func (b *bisyncRun) fastCopy(ctx context.Context, fsrc, fdst fs.Fs, files bilib.
 }
 
 func (b *bisyncRun) retryFastCopy(ctx context.Context, fsrc, fdst fs.Fs, files bilib.Names, queueName string, results []Results, err error) ([]Results, error) {
-	if err != nil && b.opt.Resilient && b.opt.Retries > 1 {
+	if err != nil && b.opt.Resilient && !b.InGracefulShutdown && b.opt.Retries > 1 {
 		for tries := 1; tries <= b.opt.Retries; tries++ {
 			fs.Logf(queueName, Color(terminal.YellowFg, "Received error: %v - retrying as --resilient is set. Retry %d/%d"), err, tries, b.opt.Retries)
 			results, err = b.fastCopy(ctx, fsrc, fdst, files, queueName)
@@ -234,6 +255,10 @@ func (b *bisyncRun) resyncDir(ctx context.Context, fsrc, fdst fs.Fs) ([]Results,
 
 // operation should be "make" or "remove"
 func (b *bisyncRun) syncEmptyDirs(ctx context.Context, dst fs.Fs, candidates bilib.Names, dirsList *fileList, results *[]Results, operation string) {
+	if b.InGracefulShutdown {
+		return
+	}
+	fs.Debugf(nil, "syncing empty dirs")
 	if b.opt.CreateEmptySrcDirs && (!b.opt.Resync || operation == "make") {
 
 		candidatesList := candidates.ToList()
@@ -247,10 +272,11 @@ func (b *bisyncRun) syncEmptyDirs(ctx context.Context, dst fs.Fs, candidates bil
 			if dirsList.has(s) { //make sure it's a dir, not a file
 				r := Results{}
 				r.Name = s
-				r.Size = 0
+				r.Size = -1
 				r.Modtime = dirsList.getTime(s).In(time.UTC)
 				r.Flags = "d"
 				r.Err = nil
+				r.Origin = "syncEmptyDirs"
 				r.Winner = operations.Winner{ // note: Obj not set
 					Side: "src",
 					Err:  nil,

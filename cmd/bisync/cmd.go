@@ -52,6 +52,7 @@ type Options struct {
 	Retries               int
 	Compare               CompareOpt
 	CompareFlag           string
+	DebugName             string
 }
 
 // Default values
@@ -125,6 +126,7 @@ func init() {
 	flags.StringVarP(cmdFlags, &Opt.Workdir, "workdir", "", Opt.Workdir, makeHelp("Use custom working dir - useful for testing. (default: {WORKDIR})"), "")
 	flags.StringVarP(cmdFlags, &Opt.BackupDir1, "backup-dir1", "", Opt.BackupDir1, "--backup-dir for Path1. Must be a non-overlapping path on the same remote.", "")
 	flags.StringVarP(cmdFlags, &Opt.BackupDir2, "backup-dir2", "", Opt.BackupDir2, "--backup-dir for Path2. Must be a non-overlapping path on the same remote.", "")
+	flags.StringVarP(cmdFlags, &Opt.DebugName, "debugname", "", Opt.DebugName, "Debug by tracking one file at various points throughout a bisync run (when -v or -vv)", "")
 	flags.BoolVarP(cmdFlags, &tzLocal, "localtime", "", tzLocal, "Use local time in listings (default: UTC)", "")
 	flags.BoolVarP(cmdFlags, &Opt.NoCleanup, "no-cleanup", "", Opt.NoCleanup, "Retain working files (useful for troubleshooting and testing).", "")
 	flags.BoolVarP(cmdFlags, &Opt.IgnoreListingChecksum, "ignore-listing-checksum", "", Opt.IgnoreListingChecksum, "Do not use checksums for listings (add --ignore-checksum to additionally skip post-copy checksum checks)", "")

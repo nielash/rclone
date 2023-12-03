@@ -17,6 +17,7 @@ import (
 
 	"github.com/rclone/rclone/cmd/bisync/bilib"
 	"github.com/rclone/rclone/fs"
+	"github.com/rclone/rclone/fs/accounting"
 	"github.com/rclone/rclone/fs/filter"
 	"github.com/rclone/rclone/fs/hash"
 	"github.com/rclone/rclone/fs/operations"
@@ -69,6 +70,9 @@ func newFileList() *fileList {
 }
 
 func (ls *fileList) empty() bool {
+	if ls == nil {
+		return true
+	}
 	return len(ls.list) == 0
 }
 
@@ -96,6 +100,12 @@ func (ls *fileList) get(file string) *fileInfo {
 func (ls *fileList) getPut(file string, dest *fileList) {
 	f := ls.get(file)
 	dest.put(file, f.size, f.time, f.hash, f.id, f.flags)
+}
+
+func (ls *fileList) getPutAll(dest *fileList) {
+	for file, f := range ls.info {
+		dest.put(file, f.size, f.time, f.hash, f.id, f.flags)
+	}
 }
 
 func (ls *fileList) remove(file string) {
@@ -359,6 +369,12 @@ func (b *bisyncRun) replaceCurrentListings() {
 	b.handleErr(b.newListing2, "error replacing Path2 listing", bilib.CopyFileIfExists(b.newListing2, b.listing2), true, true)
 }
 
+// revertToOldListings reverts to the most recent successful listing
+func (b *bisyncRun) revertToOldListings() {
+	b.handleErr(b.listing1, "error reverting to old Path1 listing", bilib.CopyFileIfExists(b.listing1+"-old", b.listing1), true, true)
+	b.handleErr(b.listing2, "error reverting to old Path2 listing", bilib.CopyFileIfExists(b.listing2+"-old", b.listing2), true, true)
+}
+
 func parseHash(str string) (string, string, error) {
 	if str == "-" {
 		return "", "", nil
@@ -484,6 +500,12 @@ func (b *bisyncRun) modifyListing(ctx context.Context, src fs.Fs, dst fs.Fs, res
 			dstList.hash = b.opt.Compare.HashType1
 		}
 	}
+
+	b.debugFn(b.DebugName, func() {
+		var rs ResultsSlice = results
+		b.debug(b.DebugName, fmt.Sprintf("modifyListing direction: %s, results has name?: %v", direction, rs.has(b.DebugName)))
+		b.debug(b.DebugName, fmt.Sprintf("modifyListing direction: %s, srcList has name?: %v, dstList has name?: %v", direction, srcList.has(b.DebugName), dstList.has(b.DebugName)))
+	})
 
 	srcWinners := newFileList()
 	dstWinners := newFileList()
@@ -615,6 +637,20 @@ func (b *bisyncRun) modifyListing(ctx context.Context, src fs.Fs, dst fs.Fs, res
 			}
 		}
 	}
+	// skipped dirs -- nothing to recheck, just add them
+	// (they are not necessarily there already, if they are new)
+	path1List := srcList
+	path2List := dstList
+	if !is1to2 {
+		path1List = dstList
+		path2List = srcList
+	}
+	if !queues.skippedDirs1.empty() {
+		queues.skippedDirs1.getPutAll(path1List)
+	}
+	if !queues.skippedDirs2.empty() {
+		queues.skippedDirs2.getPutAll(path2List)
+	}
 
 	if filterRecheck.HaveFilesFrom() {
 		// also include any aliases
@@ -630,6 +666,55 @@ func (b *bisyncRun) modifyListing(ctx context.Context, src fs.Fs, dst fs.Fs, res
 		b.recheck(ctxRecheck, src, dst, srcList, dstList, is1to2)
 	}
 
+	if b.InGracefulShutdown {
+		var toKeep []string
+		var toRollback []string
+		fs.Debugf(direction, "stats for %s", direction)
+		trs := accounting.Stats(ctx).Transferred()
+		for _, tr := range trs {
+			b.debugFn(tr.Name, func() {
+				prettyprint(tr, tr.Name, fs.LogLevelInfo)
+			})
+			if tr.Error == nil && tr.Bytes > 0 || tr.Size <= 0 {
+				prettyprint(tr, "keeping: "+tr.Name, fs.LogLevelDebug)
+				toKeep = append(toKeep, tr.Name)
+			}
+		}
+		// Dirs (for the unlikely event that the shutdown was triggered post-sync during syncEmptyDirs)
+		for _, r := range results {
+			if r.Origin == "syncEmptyDirs" {
+				if srcWinners.has(r.Name) || dstWinners.has(r.Name) {
+					toKeep = append(toKeep, r.Name)
+					fs.Infof(r.Name, "keeping empty dir")
+				}
+			}
+		}
+		oldSrc, oldDst := b.getOldLists(is1to2)
+		prettyprint(oldSrc.list, "oldSrc", fs.LogLevelDebug)
+		prettyprint(oldDst.list, "oldDst", fs.LogLevelDebug)
+		prettyprint(srcList.list, "srcList", fs.LogLevelDebug)
+		prettyprint(dstList.list, "dstList", fs.LogLevelDebug)
+		combinedList := Concat(oldSrc.list, oldDst.list, srcList.list, dstList.list)
+		for _, f := range combinedList {
+			if !slices.Contains(toKeep, f) && !slices.Contains(toKeep, b.aliases.Alias(f)) && !b.opt.DryRun {
+				toRollback = append(toRollback, f)
+			}
+		}
+		b.prepareRollback(toRollback, srcList, dstList, is1to2)
+		prettyprint(oldSrc.list, "oldSrc", fs.LogLevelDebug)
+		prettyprint(oldDst.list, "oldDst", fs.LogLevelDebug)
+		prettyprint(srcList.list, "srcList", fs.LogLevelDebug)
+		prettyprint(dstList.list, "dstList", fs.LogLevelDebug)
+
+		// clear stats so we only do this once
+		accounting.MaxCompletedTransfers = 0
+		accounting.Stats(ctx).PruneTransfers()
+	}
+
+	if b.DebugName != "" {
+		b.debug(b.DebugName, fmt.Sprintf("%s pre-save srcList has it?: %v", direction, srcList.has(b.DebugName)))
+		b.debug(b.DebugName, fmt.Sprintf("%s pre-save dstList has it?: %v", direction, dstList.has(b.DebugName)))
+	}
 	// update files
 	err = srcList.save(ctx, srcListing)
 	if err != nil {
@@ -709,8 +794,8 @@ func (b *bisyncRun) recheck(ctxRecheck context.Context, src, dst fs.Fs, srcList,
 		}
 
 		for _, item := range toRollback {
-			rollback(item, oldSrc, srcList)
-			rollback(item, oldDst, dstList)
+			b.rollback(item, oldSrc, srcList)
+			b.rollback(item, oldDst, dstList)
 		}
 	}
 }
@@ -722,10 +807,72 @@ func (b *bisyncRun) getListingNames(is1to2 bool) (srcListing string, dstListing 
 	return b.listing2, b.listing1
 }
 
-func rollback(item string, oldList, newList *fileList) {
+func (b *bisyncRun) rollback(item string, oldList, newList *fileList) {
+	alias := b.aliases.Alias(item)
 	if oldList.has(item) {
 		oldList.getPut(item, newList)
+		fs.Debugf(nil, "adding to newlist: %s", item)
+	} else if oldList.has(alias) {
+		oldList.getPut(alias, newList)
+		fs.Debugf(nil, "adding to newlist: %s", alias)
 	} else {
+		fs.Debugf(nil, "removing from newlist: %s (has it?: %v)", item, newList.has(item))
+		prettyprint(newList.list, "newList", fs.LogLevelDebug)
 		newList.remove(item)
+		newList.remove(alias)
 	}
+}
+
+func (b *bisyncRun) prepareRollback(toRollback []string, srcList, dstList *fileList, is1to2 bool) {
+	if len(toRollback) > 0 {
+		oldSrc, oldDst := b.getOldLists(is1to2)
+		if b.critical {
+			return
+		}
+
+		fs.Debugf("new lists", "src: (%v), dest: (%v)", len(srcList.list), len(dstList.list))
+
+		for _, item := range toRollback {
+			b.debugFn(item, func() {
+				b.debug(item, fmt.Sprintf("pre-rollback oldSrc has it?: %v", oldSrc.has(item)))
+				b.debug(item, fmt.Sprintf("pre-rollback oldDst has it?: %v", oldDst.has(item)))
+				b.debug(item, fmt.Sprintf("pre-rollback srcList has it?: %v", srcList.has(item)))
+				b.debug(item, fmt.Sprintf("pre-rollback dstList has it?: %v", dstList.has(item)))
+			})
+			b.rollback(item, oldSrc, srcList)
+			b.rollback(item, oldDst, dstList)
+			b.debugFn(item, func() {
+				b.debug(item, fmt.Sprintf("post-rollback oldSrc has it?: %v", oldSrc.has(item)))
+				b.debug(item, fmt.Sprintf("post-rollback oldDst has it?: %v", oldDst.has(item)))
+				b.debug(item, fmt.Sprintf("post-rollback srcList has it?: %v", srcList.has(item)))
+				b.debug(item, fmt.Sprintf("post-rollback dstList has it?: %v", dstList.has(item)))
+			})
+		}
+	}
+}
+
+func (b *bisyncRun) getOldLists(is1to2 bool) (*fileList, *fileList) {
+	srcListing, dstListing := b.getListingNames(is1to2)
+	oldSrc, err := b.loadListing(srcListing + "-old")
+	b.handleErr(oldSrc, "error loading old src listing", err, true, true)
+	oldDst, err := b.loadListing(dstListing + "-old")
+	b.handleErr(oldDst, "error loading old dst listing", err, true, true)
+	fs.Debugf("get old lists", "is1to2: %v, oldsrc: %s (%v), olddest: %s (%v)", is1to2, srcListing+"-old", len(oldSrc.list), dstListing+"-old", len(oldDst.list))
+	return oldSrc, oldDst
+}
+
+// Concat returns a new slice concatenating the passed in slices.
+func Concat[S ~[]E, E any](ss ...S) S {
+	size := 0
+	for _, s := range ss {
+		size += len(s)
+		if size < 0 {
+			panic("len out of range")
+		}
+	}
+	newslice := slices.Grow[S](nil, size)
+	for _, s := range ss {
+		newslice = append(newslice, s...)
+	}
+	return newslice
 }
