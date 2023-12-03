@@ -53,6 +53,7 @@ type Options struct {
 	Compare               CompareOpt
 	CompareFlag           string
 	DebugName             string
+	MaxLock               time.Duration
 }
 
 // Default values
@@ -111,6 +112,7 @@ var Opt Options
 
 func init() {
 	Opt.Retries = 3
+	Opt.MaxLock = 0
 	cmd.Root.AddCommand(commandDefinition)
 	cmdFlags := commandDefinition.Flags()
 	// when adding new flags, remember to also update the rc params:
@@ -132,6 +134,7 @@ func init() {
 	flags.BoolVarP(cmdFlags, &Opt.IgnoreListingChecksum, "ignore-listing-checksum", "", Opt.IgnoreListingChecksum, "Do not use checksums for listings (add --ignore-checksum to additionally skip post-copy checksum checks)", "")
 	flags.BoolVarP(cmdFlags, &Opt.Resilient, "resilient", "", Opt.Resilient, "Allow future runs to retry after certain less-serious errors, instead of requiring --resync. Use at your own risk!", "")
 	flags.IntVarP(cmdFlags, &Opt.Retries, "retries", "", Opt.Retries, "Retry operations this many times if they fail", "")
+	flags.DurationVarP(cmdFlags, &Opt.MaxLock, "max-lock", "", Opt.MaxLock, "Consider lock files older than this to be expired (default: 0 (never expire)) (minimum: 2m)", "")
 	flags.StringVarP(cmdFlags, &Opt.CompareFlag, "compare", "", Opt.CompareFlag, "Comma-separated list of compare options ex. 'size,modtime,checksum' (default: 'size,modtime')", "")
 	flags.BoolVarP(cmdFlags, &Opt.Compare.NoSlowHash, "no-slow-hash", "", Opt.Compare.NoSlowHash, "Ignore listing checksums only on backends where they are slow", "")
 }
