@@ -2,7 +2,12 @@
 title: "Bisync"
 description: "Bidirectional cloud sync solution in rclone"
 versionIntroduced: "v1.58"
+status: Beta
 ---
+
+## Bisync
+`bisync` is **in beta** and is considered an **advanced command**, so use with care.
+Make sure you have read and understood the entire [manual](https://rclone.org/bisync) (especially the [Limitations](#limitations) section) before using, or data loss can result. Questions can be asked in the [Rclone Forum](https://forum.rclone.org/).
 
 ## Getting started {#getting-started}
 
@@ -361,7 +366,7 @@ Behavior of `--resilient` may change in a future version.
 
 #### --backup-dir1 and --backup-dir2
 
-As of `v1.65`, [`--backup-dir`](/docs/#backup-dir-dir) is supported in bisync.
+As of `v1.66`, [`--backup-dir`](/docs/#backup-dir-dir) is supported in bisync.
 Because `--backup-dir` must be a non-overlapping path on the same remote,
 Bisync has introduced new `--backup-dir1` and `--backup-dir2` flags to support
 separate backup-dirs for `Path1` and `Path2` (bisyncing between different
@@ -559,9 +564,9 @@ original path on the next sync, resulting in data loss.
 It is therefore recommended to _omit_ `--inplace`.
 
 Files that **change during** a bisync run may result in data loss.
-Prior to `rclone v1.65`, this was commonly seen in highly dynamic environments, where the filesystem
+Prior to `rclone v1.66`, this was commonly seen in highly dynamic environments, where the filesystem
 was getting hammered by running processes during the sync.
-As of `rclone v1.65`, bisync was redesigned to use a "snapshot" model,
+As of `rclone v1.66`, bisync was redesigned to use a "snapshot" model,
 greatly reducing the risks from changes during a sync.
 Changes that are not detected during the current sync will now be detected during the following sync,
 and will no longer cause the entire run to throw a critical error.
@@ -596,7 +601,7 @@ Bisync sees this as all files in the old directory name as deleted and all
 files in the new directory name as new. 
 
 A recommended solution is to use [`--track-renames`](/docs/#track-renames),
-which is now supported in bisync as of `rclone v1.65`.
+which is now supported in bisync as of `rclone v1.66`.
 Note that `--track-renames` is not available during `--resync`,
 as `--resync` does not delete anything (`--track-renames` only supports `sync`, not `copy`.)
 
@@ -614,22 +619,9 @@ and there is also a [known issue concerning Google Drive users with many empty d
 For now, the recommended way to avoid using `--fast-list` is to add `--disable ListR` 
 to all bisync commands. The default behavior may change in a future version.
 
-### Overridden Configs
-
-When rclone detects an overridden config, it adds a suffix like `{ABCDE}` on the fly 
-to the internal name of the remote. Bisync follows suit by including this suffix in its listing filenames. 
-However, this suffix does not necessarily persist from run to run, especially if different flags are provided. 
-So if next time the suffix assigned is `{FGHIJ}`, bisync will get confused, 
-because it's looking for a listing file with `{FGHIJ}`, when the file it wants has `{ABCDE}`. 
-As a result, it throws 
-`Bisync critical error: cannot find prior Path1 or Path2 listings, likely due to critical error on prior run` 
-and refuses to run again until the user runs a `--resync` (unless using `--resilient`). 
-The best workaround at the moment is to set any backend-specific flags in the [config file](/commands/rclone_config/) 
-instead of specifying them with command flags. (You can still override them as needed for other rclone commands.)
-
 ### Case (and unicode) sensitivity {#case-sensitivity}
 
-As of `v1.65`, case and unicode form differences no longer cause critical errors,
+As of `v1.66`, case and unicode form differences no longer cause critical errors,
 and normalization (when comparing between filesystems) is handled according to the same flags and defaults as `rclone sync`.
 See the following options (all of which are supported by bisync) to control this behavior more granularly:
 - [`--fix-case`](/docs/#fix-case)
@@ -923,7 +915,7 @@ consider using the flag
 
 ### Google Docs (and other files of unknown size) {#gdocs}
 
-As of `v1.65`, [Google Docs](/drive/#import-export-of-google-documents)
+As of `v1.66`, [Google Docs](/drive/#import-export-of-google-documents)
 (including Google Sheets, Slides, etc.) are now supported in bisync, subject to
 the same options, defaults, and limitations as in `rclone sync`. When bisyncing
 drive with non-drive backends, the drive -> non-drive direction is controlled
@@ -973,10 +965,6 @@ skip them.) To work around this, use the default (modtime and size) instead of
 
 To ignore Google Docs entirely, use
 [`--drive-skip-gdocs`](/drive/#drive-skip-gdocs).
-
-(Note that all flags starting with `--drive` are backend-specific, and
-therefore will cause the behavior explained in [Overridden
-Configs](/#overridden-configs).)
 
 ## Usage examples
 
@@ -1354,7 +1342,7 @@ about _Unison_ and synchronization in general.
 
 ## Changelog
 
-### `v1.65`
+### `v1.66`
 * Copies and deletes are now handled in one operation instead of two
 * `--track-renames` and `--backup-dir` are now supported
 * Partial uploads known issue on `local`/`ftp`/`sftp` has been resolved (unless using `--inplace`)
@@ -1369,6 +1357,7 @@ for performance improvements and less [risk of error](https://forum.rclone.org/t
 * Google Docs (and other files of unknown size) are now supported (with the same options as in `sync`)
 * Equality checks before a sync conflict rename now fall back to `cryptcheck` (when possible) or `--download`,
 instead of of `--size-only`, when `check` is not available.
+* Bisync no longer fails to find the correct listing file when configs are overridden with backend-specific flags.
 
 ### `v1.64`
 * Fixed an [issue](https://forum.rclone.org/t/bisync-bugs-and-feature-requests/37636#:~:text=1.%20Dry%20runs%20are%20not%20completely%20dry) 
