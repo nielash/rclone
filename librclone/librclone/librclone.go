@@ -37,6 +37,7 @@ func Initialize() {
 
 	// Load the config - this may need to be configurable
 	configfile.Install()
+	rc.AddOption("main", fs.GetConfig(ctx))
 
 	// Start accounting
 	accounting.Start(ctx)
