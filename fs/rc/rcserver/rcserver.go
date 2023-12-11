@@ -338,10 +338,11 @@ func (s *Server) serveRemote(w http.ResponseWriter, r *http.Request, path string
 		}
 		// Make the entries for display
 		directory := serve.NewDirectory(path, s.server.HTMLTemplate())
+		directory.RootFsName = fsName
 		for _, entry := range entries {
 			_, isDir := entry.(fs.Directory)
-			//directory.AddHTMLEntry(entry.Remote(), isDir, entry.Size(), entry.ModTime(r.Context()))
-			directory.AddHTMLEntry(entry.Remote(), isDir, entry.Size(), time.Time{})
+			directory.AddHTMLEntry(entry.Remote(), isDir, entry.Size(), entry.ModTime(r.Context()))
+			//directory.AddHTMLEntry(entry.Remote(), isDir, entry.Size(), time.Time{})
 		}
 		sortParm := r.URL.Query().Get("sort")
 		orderParm := r.URL.Query().Get("order")

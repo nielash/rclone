@@ -13,6 +13,7 @@ import (
 
 	"github.com/rclone/rclone/fs"
 	"github.com/rclone/rclone/fs/accounting"
+	libhttp "github.com/rclone/rclone/lib/http"
 	"github.com/rclone/rclone/lib/rest"
 )
 
@@ -24,6 +25,7 @@ type DirEntry struct {
 	IsDir   bool
 	Size    int64
 	ModTime time.Time
+	CmdPath string
 }
 
 // Directory represents a directory
@@ -37,6 +39,7 @@ type Directory struct {
 	Breadcrumb   []Crumb
 	Sort         string
 	Order        string
+	RootFsName   string
 }
 
 // Crumb is a breadcrumb entry
@@ -102,6 +105,7 @@ func (d *Directory) AddHTMLEntry(remote string, isDir bool, size int64, modTime 
 		IsDir:   isDir,
 		Size:    size,
 		ModTime: modTime,
+		CmdPath: `"` + d.RootFsName + remote + `"`,
 	})
 }
 
@@ -148,6 +152,8 @@ func (d *Directory) ProcessQueryParams(sortParm string, orderParm string) *Direc
 		toSort = bySize(*d)
 	case sortByTime:
 		toSort = byTime(*d)
+	case sortByKind:
+		toSort = byKind(*d)
 	default:
 		toSort = byNameDirFirst(*d)
 	}
@@ -166,6 +172,7 @@ type byName Directory
 type byNameDirFirst Directory
 type bySize Directory
 type byTime Directory
+type byKind Directory
 
 func (d byName) Len() int      { return len(d.Entries) }
 func (d byName) Swap(i, j int) { d.Entries[i], d.Entries[j] = d.Entries[j], d.Entries[i] }
@@ -214,11 +221,19 @@ func (d byTime) Len() int           { return len(d.Entries) }
 func (d byTime) Swap(i, j int)      { d.Entries[i], d.Entries[j] = d.Entries[j], d.Entries[i] }
 func (d byTime) Less(i, j int) bool { return d.Entries[i].ModTime.Before(d.Entries[j].ModTime) }
 
+func (d byKind) Len() int      { return len(d.Entries) }
+func (d byKind) Swap(i, j int) { d.Entries[i], d.Entries[j] = d.Entries[j], d.Entries[i] }
+
+func (d byKind) Less(i, j int) bool {
+	return libhttp.Kind(d.Entries[i].Leaf) < libhttp.Kind(d.Entries[j].Leaf)
+}
+
 const (
 	sortByName         = "name"
 	sortByNameDirFirst = "namedirfirst"
 	sortBySize         = "size"
 	sortByTime         = "time"
+	sortByKind         = "kind"
 )
 
 // Serve serves a directory

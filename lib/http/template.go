@@ -11,6 +11,7 @@ import (
 
 	"github.com/spf13/pflag"
 
+	"github.com/rclone/rclone/fs"
 	"github.com/rclone/rclone/fs/config/flags"
 )
 
@@ -97,6 +98,35 @@ func AfterEpoch(t time.Time) bool {
 	return t.After(time.Time{})
 }
 
+// Kind calls fs.MimeTypeFromName, then trims quotes and returns "_Directory" if dir (for sorting)
+func Kind(remote string) (mimeType string) {
+	kind := fs.MimeTypeFromName(remote)
+	kind = strings.Trim(kind, `"`)
+	if strings.HasSuffix(remote, "/") {
+		return "_Directory"
+	}
+	return kind
+}
+
+// Icon returns an emoji icon for some common MimeTypes
+func Icon(remote string) string {
+	switch {
+	case strings.HasPrefix(fs.MimeTypeFromName(remote), "image"):
+		return "🌌"
+	case strings.HasPrefix(fs.MimeTypeFromName(remote), "video"):
+		return "🎥"
+	case strings.HasPrefix(fs.MimeTypeFromName(remote), "audio"):
+		return "🎧"
+	case strings.HasPrefix(fs.MimeTypeFromName(remote), "application"):
+		return "💻"
+	case strings.HasPrefix(fs.MimeTypeFromName(remote), "archive"):
+		return "📦"
+	case strings.HasPrefix(fs.MimeTypeFromName(remote), "text"):
+		return "📝"
+	}
+	return "❔"
+}
+
 // Assets holds the embedded filesystem for the default template
 //
 //go:embed templates
@@ -120,6 +150,8 @@ func GetTemplate(tmpl string) (*template.Template, error) {
 		"contains":   strings.Contains,
 		"hasPrefix":  strings.HasPrefix,
 		"hasSuffix":  strings.HasSuffix,
+		"kind":       Kind,
+		"icon":       Icon,
 	}
 
 	tpl, err := template.New("index").Funcs(funcMap).Parse(string(data))
