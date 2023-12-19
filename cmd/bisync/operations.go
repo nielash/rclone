@@ -13,6 +13,7 @@ import (
 	gosync "sync"
 
 	"github.com/rclone/rclone/cmd/bisync/bilib"
+	"github.com/rclone/rclone/cmd/syncdirtimes"
 	"github.com/rclone/rclone/fs"
 	"github.com/rclone/rclone/fs/filter"
 	"github.com/rclone/rclone/fs/operations"
@@ -327,6 +328,35 @@ func (b *bisyncRun) runLocked(octx context.Context, listing1, listing2 string) (
 		}
 	}
 
+	err = b.dirTimes(fctx)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// Optional sync directory modtimes
+func (b *bisyncRun) dirTimes(ctx context.Context) error {
+	if b.opt.DirTimes {
+		ci := fs.GetConfig(ctx)
+		ci.UpdateOlder = true // newer time wins regardless of direction
+
+		b.indent("Path1", "Path2", "Syncing directory modtimes to") // 1to2
+		err := syncdirtimes.SyncDirTimes(ctx, b.fs2, b.fs1)
+		if err != nil {
+			b.critical = true
+			b.retryable = true
+			return err
+		}
+		b.indent("Path2", "Path1", "Syncing directory modtimes to") // 2to1
+		err = syncdirtimes.SyncDirTimes(ctx, b.fs1, b.fs2)
+		if err != nil {
+			b.critical = true
+			b.retryable = true
+			return err
+		}
+	}
 	return nil
 }
 
@@ -456,6 +486,12 @@ func (b *bisyncRun) resync(octx, fctx context.Context, listing1, listing2 string
 		_ = os.Remove(newListing1)
 		_ = os.Remove(newListing2)
 	}
+
+	err = b.dirTimes(fctx)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 

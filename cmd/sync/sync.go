@@ -5,6 +5,8 @@ import (
 	"context"
 
 	"github.com/rclone/rclone/cmd"
+	"github.com/rclone/rclone/cmd/syncdirtimes"
+	"github.com/rclone/rclone/fs"
 	"github.com/rclone/rclone/fs/config/flags"
 	"github.com/rclone/rclone/fs/operations"
 	"github.com/rclone/rclone/fs/sync"
@@ -13,12 +15,14 @@ import (
 
 var (
 	createEmptySrcDirs = false
+	dirTimes           = false
 )
 
 func init() {
 	cmd.Root.AddCommand(commandDefinition)
 	cmdFlags := commandDefinition.Flags()
 	flags.BoolVarP(cmdFlags, &createEmptySrcDirs, "create-empty-src-dirs", "", createEmptySrcDirs, "Create empty source dirs on destination after sync", "")
+	flags.BoolVarP(cmdFlags, &dirTimes, "dir-times", "", dirTimes, "sync directory modtimes (as an extra step at the end)", "")
 }
 
 var commandDefinition = &cobra.Command{
@@ -68,7 +72,12 @@ See [this forum post](https://forum.rclone.org/t/sync-not-clearing-duplicates/14
 		fsrc, srcFileName, fdst := cmd.NewFsSrcFileDst(args)
 		cmd.Run(true, true, command, func() error {
 			if srcFileName == "" {
-				return sync.Sync(context.Background(), fdst, fsrc, createEmptySrcDirs)
+				err := sync.Sync(context.Background(), fdst, fsrc, createEmptySrcDirs)
+				if err != nil {
+					return err
+				}
+				fs.Infof(nil, "syncing directory modtimes")
+				return syncdirtimes.SyncDirTimes(context.Background(), fdst, fsrc)
 			}
 			return operations.CopyFile(context.Background(), fdst, fsrc, srcFileName, srcFileName)
 		})

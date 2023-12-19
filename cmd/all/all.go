@@ -55,6 +55,7 @@ import (
 	_ "github.com/rclone/rclone/cmd/sha1sum"
 	_ "github.com/rclone/rclone/cmd/size"
 	_ "github.com/rclone/rclone/cmd/sync"
+	_ "github.com/rclone/rclone/cmd/syncdirtimes"
 	_ "github.com/rclone/rclone/cmd/test"
 	_ "github.com/rclone/rclone/cmd/test/changenotify"
 	_ "github.com/rclone/rclone/cmd/test/histogram"

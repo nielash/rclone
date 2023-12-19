@@ -42,6 +42,7 @@ type Options struct {
 	SaveQueues            bool // save extra debugging files (test only flag)
 	IgnoreListingChecksum bool
 	Resilient             bool
+	DirTimes              bool
 }
 
 // Default values
@@ -114,6 +115,7 @@ func init() {
 	flags.BoolVarP(cmdFlags, &Opt.NoCleanup, "no-cleanup", "", Opt.NoCleanup, "Retain working files (useful for troubleshooting and testing).", "")
 	flags.BoolVarP(cmdFlags, &Opt.IgnoreListingChecksum, "ignore-listing-checksum", "", Opt.IgnoreListingChecksum, "Do not use checksums for listings (add --ignore-checksum to additionally skip post-copy checksum checks)", "")
 	flags.BoolVarP(cmdFlags, &Opt.Resilient, "resilient", "", Opt.Resilient, "Allow future runs to retry after certain less-serious errors, instead of requiring --resync. Use at your own risk!", "")
+	flags.BoolVarP(cmdFlags, &Opt.DirTimes, "dir-times", "", Opt.DirTimes, "sync directory modtimes (as an extra step at the end)", "")
 }
 
 // bisync command definition
