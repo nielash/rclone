@@ -643,6 +643,16 @@ func (f *Fs) Mkdir(ctx context.Context, dir string) error {
 	return nil
 }
 
+// TouchDir sets the directory modtime for dir
+func (f *Fs) TouchDir(ctx context.Context, t time.Time, d fs.Directory) error {
+	o := Object{
+		fs:     f,
+		remote: d.Remote(),
+		path:   f.localPath(d.Remote()),
+	}
+	return o.SetModTime(ctx, t)
+}
+
 // Rmdir removes the directory
 //
 // If it isn't empty it will return an error
@@ -1466,6 +1476,7 @@ var (
 	_ fs.PutStreamer    = &Fs{}
 	_ fs.Mover          = &Fs{}
 	_ fs.DirMover       = &Fs{}
+	_ fs.TouchDirer     = &Fs{}
 	_ fs.Commander      = &Fs{}
 	_ fs.OpenWriterAter = &Fs{}
 	_ fs.Object         = &Object{}

@@ -117,6 +117,9 @@ type Features struct {
 	// in into the first one and rmdirs the other directories.
 	MergeDirs func(ctx context.Context, dirs []Directory) error
 
+	// TouchDir sets the metadata on the directory to set the modification date
+	TouchDir func(ctx context.Context, t time.Time, d Directory) error
+
 	// CleanUp the trash in the Fs
 	//
 	// Implement this if you have a way of emptying the trash or
@@ -297,6 +300,9 @@ func (ft *Features) Fill(ctx context.Context, f Fs) *Features {
 	if do, ok := f.(MergeDirser); ok {
 		ft.MergeDirs = do.MergeDirs
 	}
+	if do, ok := f.(TouchDirer); ok {
+		ft.TouchDir = do.TouchDir
+	}
 	if do, ok := f.(CleanUpper); ok {
 		ft.CleanUp = do.CleanUp
 	}
@@ -391,6 +397,9 @@ func (ft *Features) Mask(ctx context.Context, f Fs) *Features {
 	}
 	if mask.MergeDirs == nil {
 		ft.MergeDirs = nil
+	}
+	if mask.TouchDir == nil {
+		ft.TouchDir = nil
 	}
 	if mask.CleanUp == nil {
 		ft.CleanUp = nil
@@ -576,6 +585,12 @@ type MergeDirser interface {
 	// MergeDirs merges the contents of all the directories passed
 	// in into the first one and rmdirs the other directories.
 	MergeDirs(ctx context.Context, dirs []Directory) error
+}
+
+// TouchDirer is an optional interface for Fs
+type TouchDirer interface {
+	// TouchDir sets the metadata on the directory to set the modification date
+	TouchDir(ctx context.Context, t time.Time, d Directory) error
 }
 
 // CleanUpper is an optional interfaces for Fs

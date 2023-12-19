@@ -520,6 +520,16 @@ func (f *Fs) Mkdir(ctx context.Context, dir string) error {
 	return f.Fs.Mkdir(ctx, f.cipher.EncryptDirName(dir))
 }
 
+// TouchDir sets the directory modtime for dir
+func (f *Fs) TouchDir(ctx context.Context, t time.Time, d fs.Directory) error {
+	do := f.Fs.Features().TouchDir
+	if do == nil {
+		return fs.ErrorNotImplemented
+	}
+	dir := fs.NewDirCopy(ctx, d).SetRemote(f.cipher.EncryptDirName(d.Remote()))
+	return do(ctx, t, dir)
+}
+
 // Rmdir removes the directory (container, bucket) if empty
 //
 // Return an error if it doesn't exist or isn't empty
@@ -1207,6 +1217,7 @@ var (
 	_ fs.Abouter         = (*Fs)(nil)
 	_ fs.Wrapper         = (*Fs)(nil)
 	_ fs.MergeDirser     = (*Fs)(nil)
+	_ fs.TouchDirer      = (*Fs)(nil)
 	_ fs.DirCacheFlusher = (*Fs)(nil)
 	_ fs.ChangeNotifier  = (*Fs)(nil)
 	_ fs.PublicLinker    = (*Fs)(nil)

@@ -1367,6 +1367,15 @@ func (f *Fs) Mkdir(ctx context.Context, dir string) error {
 	return f.mkdir(ctx, root)
 }
 
+// TouchDir sets the directory modtime for dir
+func (f *Fs) TouchDir(ctx context.Context, t time.Time, d fs.Directory) error {
+	o := Object{
+		fs:     f,
+		remote: d.Remote(),
+	}
+	return o.SetModTime(ctx, t)
+}
+
 // Rmdir removes the root directory of the Fs object
 func (f *Fs) Rmdir(ctx context.Context, dir string) error {
 	// Check to see if directory is empty as some servers will
@@ -1985,7 +1994,7 @@ func (o *Object) SetModTime(ctx context.Context, modTime time.Time) error {
 		return fmt.Errorf("SetModTime failed: %w", err)
 	}
 	err = o.stat(ctx)
-	if err != nil {
+	if err != nil && err != fs.ErrorIsDir {
 		return fmt.Errorf("SetModTime stat failed: %w", err)
 	}
 	return nil
@@ -2184,6 +2193,7 @@ var (
 	_ fs.Mover       = &Fs{}
 	_ fs.Copier      = &Fs{}
 	_ fs.DirMover    = &Fs{}
+	_ fs.TouchDirer  = &Fs{}
 	_ fs.Abouter     = &Fs{}
 	_ fs.Shutdowner  = &Fs{}
 	_ fs.Object      = &Object{}
