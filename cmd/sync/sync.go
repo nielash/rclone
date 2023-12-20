@@ -73,7 +73,7 @@ See [this forum post](https://forum.rclone.org/t/sync-not-clearing-duplicates/14
 		cmd.Run(true, true, command, func() error {
 			if srcFileName == "" {
 				err := sync.Sync(context.Background(), fdst, fsrc, createEmptySrcDirs)
-				if err != nil {
+				if err != nil || !dirTimes {
 					return err
 				}
 				fs.Infof(nil, "syncing directory modtimes")
