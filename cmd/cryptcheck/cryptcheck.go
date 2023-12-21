@@ -3,6 +3,7 @@ package cryptcheck
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/rclone/rclone/backend/crypt"
@@ -93,14 +94,20 @@ func cryptCheck(ctx context.Context, fdst, fsrc fs.Fs) error {
 			return true, false, fmt.Errorf("error reading hash from underlying %v: %w", underlyingDst, err)
 		}
 		if underlyingHash == "" {
-			return false, true, nil
+			if src.Size() < 0 {
+				return false, true, nil
+			}
+			return true, true, errors.New("hash unexpectedly blank")
 		}
 		cryptHash, err := fcrypt.ComputeHash(ctx, cryptDst, src, hashType)
 		if err != nil {
 			return true, false, fmt.Errorf("error computing hash: %w", err)
 		}
 		if cryptHash == "" {
-			return false, true, nil
+			if src.Size() < 0 {
+				return false, true, nil
+			}
+			return true, true, errors.New("hash unexpectedly blank")
 		}
 		if cryptHash != underlyingHash {
 			err = fmt.Errorf("hashes differ (%s:%s) %q vs (%s:%s) %q", fdst.Name(), fdst.Root(), cryptHash, fsrc.Name(), fsrc.Root(), underlyingHash)

@@ -488,6 +488,9 @@ func (f *Fs) put(ctx context.Context, in io.Reader, src fs.ObjectInfo, options [
 				return nil, fmt.Errorf("corrupted on transfer: %v encrypted hash differ src %q vs dst %q", ht, srcHash, dstHash)
 			}
 			fs.Debugf(src, "%v = %s OK", ht, srcHash)
+		} else {
+			// not removing object here as missing hash might be temporary
+			return nil, fmt.Errorf("corrupted on transfer: %v one or more hashes unexpectedly blank src %q vs dst %q", ht, srcHash, dstHash)
 		}
 	}
 

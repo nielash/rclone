@@ -268,7 +268,7 @@ func (c *copy) verify(ctx context.Context, newDst fs.Object) (err error) {
 	if sizeDiffers(ctx, c.src, newDst) {
 		return fmt.Errorf("corrupted on transfer: sizes differ %d vs %d", c.src.Size(), newDst.Size())
 	}
-	// Verify hashes are the same after transfer - ignoring blank hashes
+	// Verify hashes are the same after transfer - ignoring blank hashes when expected
 	if c.hashType != hash.None {
 		// checkHashes has logs and counts errors
 		equal, _, srcSum, dstSum, _ := checkHashes(ctx, c.src, newDst, c.hashType)

@@ -76,7 +76,7 @@ func checkHashes(ctx context.Context, src fs.ObjectInfo, dst fs.Object, ht hash.
 			return srcErr
 		}
 		if srcHash == "" {
-			fs.Debugf(src, "Src hash empty - aborting Dst hash check")
+			fs.Infof(src, "Src hash empty - aborting Dst hash check")
 			return errNoHash
 		}
 		return nil
@@ -87,14 +87,18 @@ func checkHashes(ctx context.Context, src fs.ObjectInfo, dst fs.Object, ht hash.
 			return dstErr
 		}
 		if dstHash == "" {
-			fs.Debugf(dst, "Dst hash empty - aborting Src hash check")
+			fs.Infof(dst, "Dst hash empty - aborting Src hash check")
 			return errNoHash
 		}
 		return nil
 	})
 	err = g.Wait()
 	if err == errNoHash {
-		return true, hash.None, srcHash, dstHash, nil
+		ci := fs.GetConfig(ctx)
+		if ci.IgnoreChecksum || ci.IgnoreSize || src.Size() < 0 {
+			return true, hash.None, srcHash, dstHash, nil
+		}
+		return false, hash.None, srcHash, dstHash, nil
 	}
 	if srcErr != nil {
 		err = fs.CountError(srcErr)
