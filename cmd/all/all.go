@@ -51,6 +51,7 @@ import (
 	_ "github.com/rclone/rclone/cmd/rmdirs"
 	_ "github.com/rclone/rclone/cmd/selfupdate"
 	_ "github.com/rclone/rclone/cmd/serve"
+	_ "github.com/rclone/rclone/cmd/setprofile"
 	_ "github.com/rclone/rclone/cmd/settier"
 	_ "github.com/rclone/rclone/cmd/sha1sum"
 	_ "github.com/rclone/rclone/cmd/size"

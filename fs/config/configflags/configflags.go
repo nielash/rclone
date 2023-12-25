@@ -151,6 +151,10 @@ func AddFlags(ci *fs.ConfigInfo, flagSet *pflag.FlagSet) {
 	flags.BoolVarP(flagSet, &ci.Inplace, "inplace", "", ci.Inplace, "Download directly to destination file instead of atomic download to temp/rename", "Copy")
 	flags.StringVarP(flagSet, &partialSuffix, "partial-suffix", "", ci.PartialSuffix, "Add partial-suffix to temporary file name when --inplace is not used", "Copy")
 	flags.FVarP(flagSet, &ci.MetadataMapper, "metadata-mapper", "", "Program to run to transforming metadata before upload", "Metadata")
+	flags.StringVarP(flagSet, &ci.SaveProfile, "save-profile", "", "", "Save this flag configuration as a reusable preset", "Config")
+	flags.FVarP(flagSet, &ci.UseProfile, "use-profile", "", "Use the flag configuration saved with this name. If more than one is provided, priority will be lowest to highest.", "Config")
+	flags.BoolVarP(flagSet, &ci.ProfileIncludeArgs, "profile-include-args", "", ci.ProfileIncludeArgs, "Include args (ex. the paths being synced) in addition to flags when saving/using a profile", "Config")
+	flags.BoolVarP(flagSet, &ci.ProfileStrictFlags, "profile-strict-flags", "", ci.ProfileStrictFlags, "If set, --use-profile will error if any flags are invalid for this command, instead of ignoring.", "Config")
 }
 
 // ParseHeaders converts the strings passed in via the header flags into HTTPOptions

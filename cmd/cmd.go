@@ -27,6 +27,7 @@ import (
 	"github.com/rclone/rclone/fs/cache"
 	"github.com/rclone/rclone/fs/config/configfile"
 	"github.com/rclone/rclone/fs/config/configflags"
+	profiles "github.com/rclone/rclone/fs/config/configprofiles"
 	"github.com/rclone/rclone/fs/config/flags"
 	"github.com/rclone/rclone/fs/filter"
 	"github.com/rclone/rclone/fs/filter/filterflags"
@@ -567,6 +568,7 @@ func Main() {
 	}
 	setupRootCommand(Root)
 	AddBackendFlags()
+	profiles.AddProfiles(context.Background(), Root)
 	if err := Root.Execute(); err != nil {
 		if strings.HasPrefix(err.Error(), "unknown command") && selfupdateEnabled {
 			Root.PrintErrf("You could use '%s selfupdate' to get latest features.\n\n", Root.CommandPath())

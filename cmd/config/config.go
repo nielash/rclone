@@ -13,6 +13,7 @@ import (
 	"github.com/rclone/rclone/cmd"
 	"github.com/rclone/rclone/fs"
 	"github.com/rclone/rclone/fs/config"
+	profiles "github.com/rclone/rclone/fs/config/configprofiles"
 	"github.com/rclone/rclone/fs/config/flags"
 	"github.com/rclone/rclone/fs/rc"
 	"github.com/spf13/cobra"
@@ -26,6 +27,7 @@ func init() {
 	configCommand.AddCommand(configTouchCommand)
 	configCommand.AddCommand(configPathsCommand)
 	configCommand.AddCommand(configShowCommand)
+	configCommand.AddCommand(configProfileCommand)
 	configCommand.AddCommand(configRedactedCommand)
 	configCommand.AddCommand(configDumpCommand)
 	configCommand.AddCommand(configProvidersCommand)
@@ -119,6 +121,20 @@ var configShowCommand = &cobra.Command{
 			name := strings.TrimRight(args[0], ":")
 			config.ShowRemote(name)
 		}
+	},
+}
+
+var configProfileCommand = &cobra.Command{
+	Use:   "profile",
+	Short: configCommand.Short,
+	Long:  configCommand.Long,
+	Annotations: map[string]string{
+		"versionIntroduced": "v1.66",
+	},
+	Aliases: []string{"profiles"},
+	RunE: func(command *cobra.Command, args []string) error {
+		cmd.CheckArgs(0, 0, command, args)
+		return profiles.EditProfiles(context.Background())
 	},
 }
 
