@@ -965,6 +965,23 @@ func (f *Fs) MergeDirs(ctx context.Context, dirs []fs.Directory) error {
 	return do(ctx, uDirs)
 }
 
+// TouchDir sets the directory modtime for dir
+func (f *Fs) TouchDir(ctx context.Context, t time.Time, d fs.Directory) error {
+	u, uRemote, err := f.findUpstream(d.Remote())
+	if err != nil {
+		return err
+	}
+	if do := u.f.Features().TouchDir; do != nil {
+		uDir := fs.NewOverrideDirectory(d, uRemote)
+		if uDir.Remote() == "" {
+			fs.Logf(d, "can't set modtime on upstream root. skipping.")
+			return nil
+		}
+		return do(ctx, t, uDir)
+	}
+	return errors.New("TouchDir not supported")
+}
+
 // CleanUp the trash in the Fs
 //
 // Implement this if you have a way of emptying the trash or
@@ -1099,6 +1116,7 @@ var (
 	_ fs.PublicLinker    = (*Fs)(nil)
 	_ fs.PutUncheckeder  = (*Fs)(nil)
 	_ fs.MergeDirser     = (*Fs)(nil)
+	_ fs.TouchDirer      = (*Fs)(nil)
 	_ fs.CleanUpper      = (*Fs)(nil)
 	_ fs.OpenWriterAter  = (*Fs)(nil)
 	_ fs.FullObject      = (*Object)(nil)

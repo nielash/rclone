@@ -341,6 +341,14 @@ func (f *Fs) MergeDirs(ctx context.Context, dirs []fs.Directory) error {
 	return errors.New("MergeDirs not supported")
 }
 
+// TouchDir sets the directory modtime for dir
+func (f *Fs) TouchDir(ctx context.Context, t time.Time, d fs.Directory) error {
+	if do := f.Fs.Features().TouchDir; do != nil {
+		return do(ctx, t, d)
+	}
+	return errors.New("TouchDir not supported")
+}
+
 // DirCacheFlush resets the directory cache - used in testing
 // as an optional interface
 func (f *Fs) DirCacheFlush() {
@@ -528,6 +536,7 @@ var (
 	_ fs.Abouter         = (*Fs)(nil)
 	_ fs.Wrapper         = (*Fs)(nil)
 	_ fs.MergeDirser     = (*Fs)(nil)
+	_ fs.TouchDirer      = (*Fs)(nil)
 	_ fs.DirCacheFlusher = (*Fs)(nil)
 	_ fs.ChangeNotifier  = (*Fs)(nil)
 	_ fs.PublicLinker    = (*Fs)(nil)
