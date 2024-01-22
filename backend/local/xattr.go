@@ -4,6 +4,7 @@
 package local
 
 import (
+	"encoding/base64"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -112,10 +113,10 @@ func (o *Object) getXattr() (metadata fs.Metadata, err error) {
 			fs.Errorf(o, "error reading appledouble temp file: %v", err)
 			return metadata, err
 		}
-		if o.fs.opt.MetadataMaxLength > 0 && len(string(appledoubleBytes)) > o.fs.opt.MetadataMaxLength {
-			fs.Debugf(o, "skipping appledouble metadata as length (%d) is greater than max length (%d)", len(string(appledoubleBytes)), o.fs.opt.MetadataMaxLength)
+		if o.fs.opt.MetadataMaxLength > 0 && base64.StdEncoding.EncodedLen(len(appledoubleBytes)) > o.fs.opt.MetadataMaxLength {
+			fs.Debugf(o, "skipping appledouble metadata as length (%d) is greater than max length (%d)", base64.StdEncoding.EncodedLen(len(appledoubleBytes)), o.fs.opt.MetadataMaxLength)
 		} else {
-			metadata[appledoubleKey] = string(appledoubleBytes)
+			metadata[appledoubleKey] = base64.StdEncoding.EncodeToString(appledoubleBytes)
 		}
 		defer func() { _ = os.Remove(tempfile) }()
 	}
@@ -149,7 +150,12 @@ func (o *Object) setXattr(metadata fs.Metadata) (err error) {
 		}
 		if o.fs.opt.AppleDouble && runtime.GOOS == "darwin" && k == xattrPrefix+appledoubleKey {
 			tempfile := setTempfile(o.remote)
-			err = os.WriteFile(tempfile, v, 0600)
+			appledoubleBytes := make([]byte, base64.StdEncoding.DecodedLen(len(v)))
+			_, err = base64.StdEncoding.Decode(appledoubleBytes, v)
+			if err != nil {
+				return err
+			}
+			err = os.WriteFile(tempfile, appledoubleBytes, 0600)
 			if err != nil {
 				return err
 			}
