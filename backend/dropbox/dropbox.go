@@ -1076,6 +1076,9 @@ func (f *Fs) Move(ctx context.Context, src fs.Object, remote string) (fs.Object,
 		return nil, fs.ErrorCantMove
 	}
 
+	// quick fix to avoid too_many_write_operations
+	time.Sleep(2 * time.Second)
+
 	// Temporary Object under construction
 	dstObj := &Object{
 		fs:     f,
