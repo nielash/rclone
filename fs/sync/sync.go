@@ -18,6 +18,7 @@ import (
 	"github.com/rclone/rclone/fs/hash"
 	"github.com/rclone/rclone/fs/march"
 	"github.com/rclone/rclone/fs/operations"
+	"github.com/rclone/rclone/lib/errcount"
 )
 
 // ErrorMaxDurationReached defines error when transfer duration is reached
@@ -84,6 +85,18 @@ type syncCopyMove struct {
 	maxDurationEndTime     time.Time              // end time if --max-duration is set
 	logger                 operations.LoggerFn    // LoggerFn used to report the results of a sync (or bisync) to an io.Writer
 	usingLogger            bool                   // whether we are using logger
+	setDirMetadata         bool                   // if set we set the directory metadata
+	setDirModTime          bool                   // if set we set the directory modtimes
+	setDirModTimeAfter     bool                   // if set we set the directory modtimes at the end of the sync
+	setDirModTimeMu        sync.Mutex             // protect setDirModTimeMu
+	setDirModTimes         []setDirModTime        // directories that need their modtime set
+}
+
+// For keeping track of delayed modtime sets
+type setDirModTime struct {
+	dst     fs.Directory
+	dir     string
+	modTime time.Time
 }
 
 type trackRenamesStrategy byte
@@ -136,6 +149,9 @@ func newSyncCopyMove(ctx context.Context, fdst, fsrc fs.Fs, deleteMode fs.Delete
 		modifyWindow:           fs.GetModifyWindow(ctx, fsrc, fdst),
 		trackRenamesCh:         make(chan fs.Object, ci.Checkers),
 		checkFirst:             ci.CheckFirst,
+		setDirMetadata:         ci.Metadata && fsrc.Features().ReadDirMetadata && fdst.Features().WriteDirMetadata,
+		setDirModTime:          fdst.Features().WriteDirSetModTime || fdst.Features().MkdirMetadata != nil || fdst.Features().DirSetModTime != nil,
+		setDirModTimeAfter:     fdst.Features().DirModTimeUpdatesOnWrite,
 	}
 
 	s.logger, s.usingLogger = operations.GetLogger(ctx)
@@ -966,6 +982,11 @@ func (s *syncCopyMove) run() error {
 		}
 	}
 
+	// Update modtimes for directories if necessary
+	if s.setDirModTime && s.setDirModTimeAfter {
+		s.processError(s.setDelayedDirModTimes(s.ctx))
+	}
+
 	// Prune empty directories
 	if s.deleteMode != fs.DeleteModeOff {
 		if s.currentError() != nil && !s.ci.IgnoreErrors {
@@ -1055,6 +1076,62 @@ func (s *syncCopyMove) DstOnly(dst fs.DirEntry) (recurse bool) {
 	return false
 }
 
+// copyDirMetadata copies the src directory modTime or Metadata to dst
+// or f if nil. If dst is nil then it uses dir as the name of the new
+// directory.
+//
+// It returns the destination directory if possible.  Note that this may
+// be nil.
+func (s *syncCopyMove) copyDirMetadata(ctx context.Context, f fs.Fs, dst fs.Directory, dir string, src fs.Directory) (newDst fs.Directory) {
+	var err error
+	if s.setDirMetadata {
+		newDst, err = operations.CopyDirMetadata(ctx, f, dst, dir, src)
+	} else if s.setDirModTime {
+		if dst == nil {
+			newDst, err = operations.MkdirModTime(ctx, f, dir, src.ModTime(ctx))
+		} else {
+			newDst, err = operations.SetDirModTime(ctx, f, dst, dir, src.ModTime(ctx))
+		}
+	} else if dst == nil {
+		// Create the directory if it doesn't exist
+		err = operations.Mkdir(ctx, f, dir)
+	}
+	// If we need to set modtime after and we created a dir, then save it for later
+	if s.setDirModTime && s.setDirModTimeAfter && err == nil {
+		s.setDirModTimeMu.Lock()
+		s.setDirModTimes = append(s.setDirModTimes, setDirModTime{
+			dst:     newDst,
+			dir:     dir,
+			modTime: src.ModTime(ctx),
+		})
+		s.setDirModTimeMu.Unlock()
+		fs.Debugf(nil, "Added delayed dir = %q, newDst=%v", dir, newDst)
+	}
+	s.processError(err)
+	if err != nil {
+		return nil
+	}
+	return newDst
+}
+
+// Set the modtimes for directories
+//
+// FIXME do we have to do this in any specific order?
+func (s *syncCopyMove) setDelayedDirModTimes(ctx context.Context) error {
+	s.setDirModTimeMu.Lock()
+	defer s.setDirModTimeMu.Unlock()
+
+	errCount := errcount.New()
+
+	// FIXME do this in parallel
+	for _, item := range s.setDirModTimes {
+		_, err := operations.SetDirModTime(ctx, s.fdst, item.dst, item.dir, item.modTime)
+		errCount.Add(err)
+	}
+	return errCount.Err("failed to set directory modtime")
+
+}
+
 // SrcOnly have an object which is in the source only
 func (s *syncCopyMove) SrcOnly(src fs.DirEntry) (recurse bool) {
 	if s.deleteMode == fs.DeleteModeOnly {
@@ -1101,6 +1178,9 @@ func (s *syncCopyMove) SrcOnly(src fs.DirEntry) (recurse bool) {
 		s.srcEmptyDirs[src.Remote()] = src
 		s.logger(s.ctx, operations.MissingOnDst, src, nil, fs.ErrorIsDir)
 		s.srcEmptyDirsMu.Unlock()
+
+		// Create the directory and make sure the Metadata/ModTime is correct
+		s.copyDirMetadata(s.ctx, s.fdst, nil, x.Remote(), x)
 		return true
 	default:
 		panic("Bad object in DirEntries")
@@ -1135,9 +1215,12 @@ func (s *syncCopyMove) Match(ctx context.Context, dst, src fs.DirEntry) (recurse
 		}
 	case fs.Directory:
 		// Do the same thing to the entire contents of the directory
-		_, ok := dst.(fs.Directory)
+		dstX, ok := dst.(fs.Directory)
 		if ok {
 			s.logger(s.ctx, operations.Match, src, dst, fs.ErrorIsDir)
+			// Create the directory and make sure the Metadata/ModTime is correct
+			s.copyDirMetadata(s.ctx, s.fdst, dstX, "", srcX)
+
 			// Only record matched (src & dst) empty dirs when performing move
 			if s.DoMove {
 				// Record the src directory for deletion

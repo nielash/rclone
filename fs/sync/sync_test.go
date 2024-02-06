@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"runtime"
@@ -65,15 +66,88 @@ func TestCopy(t *testing.T) {
 	ctx := context.Background()
 	r := fstest.NewRun(t)
 	file1 := r.WriteFile("sub dir/hello world", "hello world", t1)
+	_, err := operations.SetDirModTime(ctx, r.Flocal, nil, "sub dir", t2)
+	if err != nil && !errors.Is(err, fs.ErrorNotImplemented) {
+		require.NoError(t, err)
+	}
 	r.Mkdir(ctx, r.Fremote)
 
 	ctx = predictDstFromLogger(ctx)
-	err := CopyDir(ctx, r.Fremote, r.Flocal, false)
+	err = CopyDir(ctx, r.Fremote, r.Flocal, false)
 	require.NoError(t, err)
 	testLoggerVsLsf(ctx, r.Fremote, operations.GetLoggerOpt(ctx).JSON, t)
 
 	r.CheckLocalItems(t, file1)
 	r.CheckRemoteItems(t, file1)
+
+	// Check that the modtimes of the directories are as expected
+	r.CheckDirectoryModTimes(t, "sub dir")
+}
+
+func TestCopyMetadata(t *testing.T) {
+	ctx := context.Background()
+	ctx, ci := fs.AddConfig(ctx)
+	ci.Metadata = true
+	r := fstest.NewRun(t)
+	features := r.Fremote.Features()
+
+	if !features.ReadMetadata && !features.WriteMetadata && !features.UserMetadata &&
+		!features.ReadDirMetadata && !features.WriteDirMetadata && !features.UserDirMetadata {
+		t.Skip("Skipping as metadata not supported")
+	}
+
+	const content = "hello metadata world!"
+	const dirPath = "metadata sub dir"
+	const filePath = dirPath + "/hello metadata world"
+
+	fileMetadata := fs.Metadata{
+		// System metadata supported by all backends
+		"mtime": t1.Format(time.RFC3339Nano),
+		// User metadata
+		"potato": "jersey",
+	}
+
+	dirMetadata := fs.Metadata{
+		// System metadata supported by all backends
+		"mtime": t2.Format(time.RFC3339Nano),
+		// User metadata
+		"potato": "king edward",
+	}
+
+	// Make the directory with metadata - may fall back to Mkdir
+	_, err := operations.MkdirMetadata(ctx, r.Flocal, dirPath, dirMetadata)
+	require.NoError(t, err)
+
+	// Upload the file with metadata
+	in := io.NopCloser(bytes.NewBufferString(content))
+	_, err = operations.Rcat(ctx, r.Flocal, filePath, in, t1, fileMetadata)
+	require.NoError(t, err)
+	file1 := fstest.NewItem(filePath, content, t1)
+
+	// Reset the time of the directory
+	_, err = operations.SetDirModTime(ctx, r.Flocal, nil, dirPath, t2)
+	if err != nil && !errors.Is(err, fs.ErrorNotImplemented) {
+		require.NoError(t, err)
+	}
+
+	ctx = predictDstFromLogger(ctx)
+	err = CopyDir(ctx, r.Fremote, r.Flocal, false)
+	require.NoError(t, err)
+	testLoggerVsLsf(ctx, r.Fremote, operations.GetLoggerOpt(ctx).JSON, t)
+
+	r.CheckLocalItems(t, file1)
+	r.CheckRemoteItems(t, file1)
+
+	// Check that the modtimes of the directories are as expected
+	r.CheckDirectoryModTimes(t, dirPath)
+
+	// Check that the metadata on the directory and file is correct
+	if features.ReadMetadata {
+		fstest.CheckEntryMetadata(ctx, t, r.Fremote, fstest.NewObject(ctx, t, r.Fremote, filePath), fileMetadata)
+	}
+	if features.ReadDirMetadata {
+		fstest.CheckEntryMetadata(ctx, t, r.Fremote, fstest.NewDirectory(ctx, t, r.Fremote, dirPath), dirMetadata)
+	}
 }
 
 func TestCopyMissingDirectory(t *testing.T) {
@@ -205,9 +279,14 @@ func TestCopyEmptyDirectories(t *testing.T) {
 	ctx := context.Background()
 	r := fstest.NewRun(t)
 	file1 := r.WriteFile("sub dir/hello world", "hello world", t1)
-	err := operations.Mkdir(ctx, r.Flocal, "sub dir2")
+	_, err := operations.MkdirModTime(ctx, r.Flocal, "sub dir2", t2)
 	require.NoError(t, err)
 	r.Mkdir(ctx, r.Fremote)
+
+	// Set the modtime on "sub dir" to something specific
+	// Without this it fails on the CI and in VirtualBox with variances of up to 10mS
+	_, err = operations.SetDirModTime(ctx, r.Flocal, nil, "sub dir", t1)
+	require.NoError(t, err)
 
 	ctx = predictDstFromLogger(ctx)
 	err = CopyDir(ctx, r.Fremote, r.Flocal, true)
@@ -224,6 +303,9 @@ func TestCopyEmptyDirectories(t *testing.T) {
 			"sub dir2",
 		},
 	)
+
+	// Check that the modtimes of the directories are as expected
+	r.CheckDirectoryModTimes(t, "sub dir", "sub dir2")
 }
 
 // Test move empty directories
@@ -231,8 +313,10 @@ func TestMoveEmptyDirectories(t *testing.T) {
 	ctx := context.Background()
 	r := fstest.NewRun(t)
 	file1 := r.WriteFile("sub dir/hello world", "hello world", t1)
-	err := operations.Mkdir(ctx, r.Flocal, "sub dir2")
+	_, err := operations.MkdirModTime(ctx, r.Flocal, "sub dir2", t2)
 	require.NoError(t, err)
+	subDir := fstest.NewDirectory(ctx, t, r.Flocal, "sub dir")
+	subDirT := subDir.ModTime(ctx)
 	r.Mkdir(ctx, r.Fremote)
 
 	ctx = predictDstFromLogger(ctx)
@@ -250,6 +334,14 @@ func TestMoveEmptyDirectories(t *testing.T) {
 			"sub dir2",
 		},
 	)
+
+	// Check that the modtimes of the directories are as expected
+	r.CheckDirectoryModTimes(t, "sub dir2")
+	// Note that "sub dir" mod time is updated when file1 is deleted from it
+	// So check it more manually
+	got := fstest.NewDirectory(ctx, t, r.Fremote, "sub dir")
+	gotT := got.ModTime(ctx)
+	fstest.AssertTimeEqualWithPrecision(t, subDir.Remote(), subDirT, gotT, fs.GetModifyWindow(ctx, r.Fremote, r.Flocal))
 }
 
 // Test sync empty directories
@@ -257,8 +349,14 @@ func TestSyncEmptyDirectories(t *testing.T) {
 	ctx := context.Background()
 	r := fstest.NewRun(t)
 	file1 := r.WriteFile("sub dir/hello world", "hello world", t1)
-	err := operations.Mkdir(ctx, r.Flocal, "sub dir2")
+	_, err := operations.MkdirModTime(ctx, r.Flocal, "sub dir2", t2)
 	require.NoError(t, err)
+
+	// Set the modtime on "sub dir" to something specific
+	// Without this it fails on the CI and in VirtualBox with variances of up to 10mS
+	_, err = operations.SetDirModTime(ctx, r.Flocal, nil, "sub dir", t1)
+	require.NoError(t, err)
+
 	r.Mkdir(ctx, r.Fremote)
 
 	ctx = predictDstFromLogger(ctx)
@@ -276,6 +374,9 @@ func TestSyncEmptyDirectories(t *testing.T) {
 			"sub dir2",
 		},
 	)
+
+	// Check that the modtimes of the directories are as expected
+	r.CheckDirectoryModTimes(t, "sub dir", "sub dir2")
 }
 
 // Test a server-side copy if possible, or the backup path if not
