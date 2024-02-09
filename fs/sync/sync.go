@@ -1154,8 +1154,6 @@ func (s *syncCopyMove) Match(ctx context.Context, dst, src fs.DirEntry) (recurse
 				oldDirFs, err := fs.NewFs(s.ctx, filepath.Join(fs.ConfigStringFull(s.fdst), dst.Remote()))
 				s.processError(err)
 				newDirPath := filepath.Join(fs.ConfigStringFull(s.fdst), filepath.Dir(dst.Remote()), filepath.Base(src.Remote()))
-				newDirFs, err := fs.NewFs(s.ctx, newDirPath)
-				s.processError(err)
 				// Create random name to temporarily move dir to
 				tmpDirName := newDirPath + "-rclone-move-" + random.String(8)
 				tmpDirFs, err := fs.NewFs(s.ctx, tmpDirName)
@@ -1164,6 +1162,8 @@ func (s *syncCopyMove) Match(ctx context.Context, dst, src fs.DirEntry) (recurse
 					fs.Errorf(dst, "Error while attempting to move dir to temporary location %s: %v", tmpDirName, err)
 					s.processError(err)
 				} else {
+					newDirFs, err := fs.NewFs(s.ctx, newDirPath)
+					s.processError(err)
 					if err = MoveDir(s.ctx, newDirFs, tmpDirFs, s.deleteEmptySrcDirs, s.copyEmptySrcDirs); err != nil {
 						fs.Errorf(dst, "Error while attempting to rename to %s: %v", src.Remote(), err)
 						s.processError(err)
