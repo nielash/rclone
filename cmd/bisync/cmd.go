@@ -151,6 +151,7 @@ func init() {
 	flags.StringVarP(cmdFlags, &Opt.ConflictSuffixFlag, "conflict-suffix", "", Opt.ConflictSuffixFlag, "Suffix to use when renaming a --conflict-loser. Can be either one string or two comma-separated strings to assign different suffixes to Path1/Path2. (default: 'conflict')", "")
 	_ = cmdFlags.MarkHidden("debugname")
 	_ = cmdFlags.MarkHidden("localtime")
+	addRC()
 }
 
 // bisync command definition

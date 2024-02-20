@@ -37,6 +37,7 @@ func Initialize() {
 
 	// Load the config - this may need to be configurable
 	configfile.Install()
+	rc.AddOption("main", fs.GetConfig(ctx))
 
 	// Start accounting
 	accounting.Start(ctx)
@@ -105,11 +106,11 @@ func RPC(method string, input string) (output string, status int) {
 	if call.NeedsRequest {
 		return writeError(method, in, fmt.Errorf("method %q needs request, not supported", method), http.StatusNotFound)
 		// Add the request to RC
-		//in["_request"] = r
+		// in["_request"] = r
 	}
 	if call.NeedsResponse {
 		return writeError(method, in, fmt.Errorf("method %q need response, not supported", method), http.StatusNotFound)
-		//in["_response"] = w
+		// in["_response"] = w
 	}
 
 	fs.Debugf(nil, "rc: %q: with parameters %+v", method, in)
