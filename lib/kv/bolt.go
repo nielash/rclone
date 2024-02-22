@@ -290,6 +290,9 @@ func (b *bucketAdapter) Cursor() Cursor {
 
 // Stop a database loop, optionally removing the file
 func (db *DB) Stop(remove bool) error {
+	if db.bolt == nil {
+		return nil
+	}
 	return db.Do(false, &opStop{remove: remove})
 }
 
