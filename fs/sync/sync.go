@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"path"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -1084,6 +1085,10 @@ func (s *syncCopyMove) DstOnly(dst fs.DirEntry) (recurse bool) {
 // be nil.
 func (s *syncCopyMove) copyDirMetadata(ctx context.Context, f fs.Fs, dst fs.Directory, dir string, src fs.Directory) (newDst fs.Directory) {
 	var err error
+	fi := filter.GetConfig(ctx)
+	if len(fi.Opt.DirsFrom) > 0 && !slices.Contains(fi.Opt.DirsFrom, src.Remote()) {
+		return nil
+	}
 	if s.setDirMetadata {
 		newDst, err = operations.CopyDirMetadata(ctx, f, dst, dir, src)
 	} else if s.setDirModTime {

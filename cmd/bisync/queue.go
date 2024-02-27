@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"path"
+	"slices"
 	"sort"
 	mutex "sync" // renamed as "sync" already in use
 	"time"
@@ -232,16 +234,33 @@ func (b *bisyncRun) fastCopy(ctx context.Context, fsrc, fdst fs.Fs, files bilib.
 		return nil, err
 	}
 
+	addWithParents := func(dir string, list []string) []string {
+		list = append(list, dir)
+		for {
+			dir = path.Dir(dir)
+			if dir == "." {
+				break
+			}
+			if slices.Contains(list, dir) {
+				break
+			}
+			list = append(list, dir)
+		}
+		return list
+	}
+
 	ctxCopy, filterCopy := filter.AddConfig(b.opt.setDryRun(ctx))
 	for _, file := range files.ToList() {
 		if err := filterCopy.AddFile(file); err != nil {
 			return nil, err
 		}
+		filterCopy.Opt.DirsFrom = addWithParents(file, filterCopy.Opt.DirsFrom)
 		alias := b.aliases.Alias(file)
 		if alias != file {
 			if err := filterCopy.AddFile(alias); err != nil {
 				return nil, err
 			}
+			filterCopy.Opt.DirsFrom = addWithParents(alias, filterCopy.Opt.DirsFrom)
 		}
 	}
 
@@ -349,7 +368,11 @@ func (b *bisyncRun) syncEmptyDirs(ctx context.Context, dst fs.Fs, candidates bil
 					rSrc.Winner.Side = "none"
 					rDst.Winner.Side = "none"
 				} else if operation == "make" {
-					direrr = operations.Mkdir(ctx, dst, s)
+					if !rSrc.Modtime.IsZero() {
+						_, direrr = operations.MkdirModTime(ctx, dst, s, rSrc.Modtime)
+					} else {
+						direrr = operations.Mkdir(ctx, dst, s)
+					}
 					rSrc.Sigil = operations.MissingOnDst
 					rDst.Sigil = operations.MissingOnDst
 					rSrc.Src = s

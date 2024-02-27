@@ -26,6 +26,7 @@ type Opt struct {
 	ExcludeFile    []string
 	FilesFrom      []string
 	FilesFromRaw   []string
+	DirsFrom       []string // quick fix for bisync, may change in future versions
 	MetaRules      RulesOpt
 	MinAge         fs.Duration
 	MaxAge         fs.Duration
