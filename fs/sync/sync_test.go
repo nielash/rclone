@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path"
 	"runtime"
 	"sort"
 	"strings"
@@ -2620,4 +2621,20 @@ func testLoggerVsLsf(ctx context.Context, Fremote fs.Fs, logger *bytes.Buffer, t
 		err := LoggerMatchesLsf(&newlogger, lsf)
 		require.NoError(t, err)
 	}
+}
+
+func TestPathManipulation(t *testing.T) {
+	ctx, _ := fs.AddConfig(context.Background())
+	r := fstest.NewRun(t)
+	r.WriteFile("a/b/c", "hello", t1)
+	obj, err := r.Flocal.NewObject(ctx, "a/b/c")
+	assert.NoError(t, err)
+	assert.Equal(t, r.Flocal.Root(), obj.Fs().Root())
+
+	fullpath := path.Join(obj.Fs().Root(), obj.Remote())
+	dir := path.Dir(fullpath)
+	newpath := path.Join(dir, "d")
+	fsrc, err := fs.NewFs(ctx, newpath)
+	assert.NoError(t, err)
+	assert.Equal(t, r.Flocal.Root()+"/a/b/d", fsrc.Root()) // fails on Windows only
 }
