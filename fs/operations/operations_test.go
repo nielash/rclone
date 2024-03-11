@@ -550,6 +550,22 @@ func TestCat(t *testing.T) {
 	}
 }
 
+// test that Purge fallback does not result in deadlock from concurrently listing and removing
+func TestPurgeListDeadlock(t *testing.T) {
+	ctx := context.Background()
+	r := fstest.NewRunIndividual(t) // make new container (azureblob has delayed mkdir after rmdir)
+	r.Mkdir(ctx, r.Fremote)
+	r.Fremote.Features().Disable("Purge") // force fallback-purge
+
+	// make a lot of files to prevent it from finishing too quickly
+	for i := 0; i < 100; i++ {
+		dst := "file" + fmt.Sprint(i) + ".txt"
+		r.WriteObject(ctx, dst, "hello", t1)
+	}
+
+	require.NoError(t, operations.Purge(ctx, r.Fremote, ""))
+}
+
 func TestPurge(t *testing.T) {
 	ctx := context.Background()
 	r := fstest.NewRunIndividual(t) // make new container (azureblob has delayed mkdir after rmdir)

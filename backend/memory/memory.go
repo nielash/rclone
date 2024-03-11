@@ -303,7 +303,9 @@ func (f *Fs) list(ctx context.Context, bucket, directory, prefix string, addBuck
 					}
 					_, found := dirs[dir]
 					if !found {
+						b.mu.RUnlock()
 						err = fn(dir, fs.NewDir(dir, time.Time{}), true)
+						b.mu.RLock()
 						if err != nil {
 							return err
 						}
@@ -316,7 +318,9 @@ func (f *Fs) list(ctx context.Context, bucket, directory, prefix string, addBuck
 			if addBucket {
 				remote = path.Join(bucket, remote)
 			}
+			b.mu.RUnlock()
 			err = fn(remote, f.newObject(remote, od), false)
+			b.mu.RLock()
 			if err != nil {
 				return err
 			}
