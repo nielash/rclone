@@ -2674,6 +2674,7 @@ func TestNothingToTransfer(t *testing.T) {
 	assert.True(t, strings.Contains(string(output), "Copied"), `expected to find at least one "Copied" log: `+string(output))
 	if r.Fremote.Features().DirSetModTime != nil || r.Fremote.Features().MkdirMetadata != nil {
 		assert.True(t, strings.Contains(string(output), "Set directory modification time"), `expected to find at least one "Set directory modification time" log: `+string(output))
+		assert.True(t, strings.Contains(string(output), "Made directory with metadata"), `expected to find at least one "Made directory with metadata" log: `+string(output))
 	}
 	assert.False(t, strings.Contains(string(output), "There was nothing to transfer"), `expected to find no "There was nothing to transfer" logs, but found one: `+string(output))
 	assert.True(t, accounting.GlobalStats().GetTransfers() >= 2)
@@ -2696,6 +2697,8 @@ func TestNothingToTransfer(t *testing.T) {
 	assert.False(t, strings.Contains(string(output), "Copied"), `expected to find no "Copied" logs, but found one: `+string(output))
 	if r.Fremote.Features().DirSetModTime != nil || r.Fremote.Features().MkdirMetadata != nil {
 		assert.False(t, strings.Contains(string(output), "Set directory modification time"), `expected to find no "Set directory modification time" logs, but found one: `+string(output))
+		assert.False(t, strings.Contains(string(output), "Updated directory metadata"), `expected to find no "Updated directory metadata" logs, but found one: `+string(output))
+		assert.False(t, strings.Contains(string(output), "directory"), `expected to find no "directory"-related logs, but found one: `+string(output)) // catch-all
 	}
 	assert.True(t, strings.Contains(string(output), "There was nothing to transfer"), `expected to find a "There was nothing to transfer" log: `+string(output))
 	assert.Equal(t, int64(0), accounting.GlobalStats().GetTransfers())
