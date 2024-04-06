@@ -2635,7 +2635,7 @@ func TestSyncConcurrentTruncate(t *testing.T) {
 
 // Tests that nothing is transferred when src and dst already match
 // Run the same sync twice, ensure no action is taken the second time
-func TestNothingToTransfer(t *testing.T) {
+func testNothingToTransfer(t *testing.T, copyEmptySrcDirs bool) {
 	accounting.GlobalStats().ResetCounters()
 	ctx, _ := fs.AddConfig(context.Background())
 	r := fstest.NewRun(t)
@@ -2660,7 +2660,7 @@ func TestNothingToTransfer(t *testing.T) {
 	accounting.GlobalStats().ResetCounters()
 	ctx = predictDstFromLogger(ctx)
 	output := bilib.CaptureOutput(func() {
-		err = CopyDir(ctx, r.Fremote, r.Flocal, true)
+		err = CopyDir(ctx, r.Fremote, r.Flocal, copyEmptySrcDirs)
 		require.NoError(t, err)
 	})
 	require.NotNil(t, output)
@@ -2682,7 +2682,7 @@ func TestNothingToTransfer(t *testing.T) {
 	accounting.GlobalStats().ResetCounters()
 	ctx = predictDstFromLogger(ctx)
 	output = bilib.CaptureOutput(func() {
-		err = CopyDir(ctx, r.Fremote, r.Flocal, true)
+		err = CopyDir(ctx, r.Fremote, r.Flocal, copyEmptySrcDirs)
 		require.NoError(t, err)
 	})
 	require.NotNil(t, output)
@@ -2699,6 +2699,14 @@ func TestNothingToTransfer(t *testing.T) {
 	}
 	assert.True(t, strings.Contains(string(output), "There was nothing to transfer"), `expected to find a "There was nothing to transfer" log: `+string(output))
 	assert.Equal(t, int64(0), accounting.GlobalStats().GetTransfers())
+}
+
+func TestNothingToTransferWithEmptyDirs(t *testing.T) {
+	testNothingToTransfer(t, true)
+}
+
+func TestNothingToTransferWithoutEmptyDirs(t *testing.T) {
+	testNothingToTransfer(t, false)
 }
 
 // for testing logger:
