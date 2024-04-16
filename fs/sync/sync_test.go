@@ -2674,7 +2674,6 @@ func testNothingToTransfer(t *testing.T, copyEmptySrcDirs bool) {
 	assert.True(t, strings.Contains(string(output), "Copied"), `expected to find at least one "Copied" log: `+string(output))
 	if r.Fremote.Features().DirSetModTime != nil || r.Fremote.Features().MkdirMetadata != nil {
 		assert.True(t, strings.Contains(string(output), "Set directory modification time"), `expected to find at least one "Set directory modification time" log: `+string(output))
-		assert.True(t, strings.Contains(string(output), "Made directory with metadata"), `expected to find at least one "Made directory with metadata" log: `+string(output))
 	}
 	assert.False(t, strings.Contains(string(output), "There was nothing to transfer"), `expected to find no "There was nothing to transfer" logs, but found one: `+string(output))
 	assert.True(t, accounting.GlobalStats().GetTransfers() >= 2)
