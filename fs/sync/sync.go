@@ -1098,15 +1098,9 @@ func (s *syncCopyMove) DstOnly(dst fs.DirEntry) (recurse bool) {
 }
 
 // keeps track of dirs with changed contents, to avoid setting modtimes on dirs that haven't changed
-//
-// marks the parent of entry as modified
-func (s *syncCopyMove) markDirModified(entry string) {
+func (s *syncCopyMove) markDirModified(dir string) {
 	if !s.setDirModTimeAfter {
 		return
-	}
-	dir := path.Dir(entry)
-	if dir == "." {
-		dir = ""
 	}
 	s.setDirModTimeMu.Lock()
 	defer s.setDirModTimeMu.Unlock()
@@ -1116,7 +1110,11 @@ func (s *syncCopyMove) markDirModified(entry string) {
 // like markDirModified, but accepts an Object instead of a string.
 // the marked dir will be this object's parent.
 func (s *syncCopyMove) markDirModifiedObject(o fs.Object) {
-	s.markDirModified(o.Remote())
+	dir := path.Dir(o.Remote())
+	if dir == "." {
+		dir = ""
+	}
+	s.markDirModified(dir)
 }
 
 // copyDirMetadata copies the src directory modTime or Metadata to dst
