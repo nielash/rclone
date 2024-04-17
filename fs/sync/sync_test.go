@@ -307,6 +307,8 @@ func TestCopyEmptyDirectories(t *testing.T) {
 	file1 := r.WriteFile("sub dir/hello world", "hello world", t1)
 	_, err := operations.MkdirModTime(ctx, r.Flocal, "sub dir2", t2)
 	require.NoError(t, err)
+	_, err = operations.MkdirModTime(ctx, r.Flocal, "sub dir2/sub sub dir2", t2)
+	require.NoError(t, err)
 	r.Mkdir(ctx, r.Fremote)
 
 	// Set the modtime on "sub dir" to something specific
@@ -327,11 +329,12 @@ func TestCopyEmptyDirectories(t *testing.T) {
 		[]string{
 			"sub dir",
 			"sub dir2",
+			"sub dir2/sub sub dir2",
 		},
 	)
 
 	// Check that the modtimes of the directories are as expected
-	r.CheckDirectoryModTimes(t, "sub dir", "sub dir2")
+	r.CheckDirectoryModTimes(t, "sub dir", "sub dir2", "sub dir2/sub sub dir2")
 }
 
 // Test copy empty directories when we are configured not to create them
@@ -340,6 +343,8 @@ func TestCopyNoEmptyDirectories(t *testing.T) {
 	r := fstest.NewRun(t)
 	file1 := r.WriteFile("sub dir/hello world", "hello world", t1)
 	err := operations.Mkdir(ctx, r.Flocal, "sub dir2")
+	require.NoError(t, err)
+	_, err = operations.MkdirModTime(ctx, r.Flocal, "sub dir2/sub sub dir2", t2)
 	require.NoError(t, err)
 	r.Mkdir(ctx, r.Fremote)
 

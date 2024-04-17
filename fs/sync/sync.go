@@ -1121,13 +1121,13 @@ func (s *syncCopyMove) markDirModifiedObject(o fs.Object) {
 // or f if nil. If dst is nil then it uses dir as the name of the new
 // directory.
 //
-// It returns the destination directory if possible.  Note that this may
-// be nil.
-func (s *syncCopyMove) copyDirMetadata(ctx context.Context, f fs.Fs, dst fs.Directory, dir string, src fs.Directory) (newDst fs.Directory) {
+// It returns whether it created or modified the directory
+func (s *syncCopyMove) copyDirMetadata(ctx context.Context, f fs.Fs, dst fs.Directory, dir string, src fs.Directory) (modified bool) {
+	var newDst fs.Directory
 	var err error
 	equal := operations.DirsEqual(ctx, src, dst, operations.DirsEqualOpt{ModifyWindow: s.modifyWindow, SetDirModtime: s.setDirModTime, SetDirMetadata: s.setDirMetadata})
 	if !s.setDirModTimeAfter && equal {
-		return nil
+		return false
 	}
 	setMeta := true
 	if s.setDirModTimeAfter && equal {
@@ -1145,6 +1145,7 @@ func (s *syncCopyMove) copyDirMetadata(ctx context.Context, f fs.Fs, dst fs.Dire
 			// Create the directory if it doesn't exist
 			err = operations.Mkdir(ctx, f, dir)
 		}
+		modified = true
 	} else {
 		setMeta = s.setDirMetadata
 		newDst = dst
@@ -1178,10 +1179,7 @@ func (s *syncCopyMove) copyDirMetadata(ctx context.Context, f fs.Fs, dst fs.Dire
 		fs.Debugf(nil, "Added delayed dir = %q, newDst=%v", dir, newDst)
 	}
 	s.processError(err)
-	if err != nil {
-		return nil
-	}
-	return newDst
+	return modified
 }
 
 // Set the modtimes for directories
@@ -1277,8 +1275,10 @@ func (s *syncCopyMove) SrcOnly(src fs.DirEntry) (recurse bool) {
 		s.logger(s.ctx, operations.MissingOnDst, src, nil, fs.ErrorIsDir)
 
 		// Create the directory and make sure the Metadata/ModTime is correct
-		s.markDirModified(x.Remote())
-		s.copyDirMetadata(s.ctx, s.fdst, nil, x.Remote(), x)
+		if s.copyDirMetadata(s.ctx, s.fdst, nil, x.Remote(), x) {
+			// If the directory was modified then we need to mark the parent as modified
+			s.markDirModified(x.Remote())
+		}
 		return true
 	default:
 		panic("Bad object in DirEntries")
