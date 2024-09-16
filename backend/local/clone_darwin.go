@@ -44,7 +44,7 @@ func (f *Fs) Copy(ctx context.Context, src fs.Object, remote string) (fs.Object,
 		return nil, err
 	}
 
-	err = Clone(srcObj.path, f.localPath(remote))
+	err = Clone(srcObj.path, f.localPath(remote), f.opt.FollowSymlinks)
 	if err != nil {
 		return nil, err
 	}
@@ -64,14 +64,18 @@ func (f *Fs) Copy(ctx context.Context, src fs.Object, remote string) (fs.Object,
 // Clone uses APFS cloning if possible, otherwise falls back to copying (with full metadata preservation)
 // note that this is closely related to unix.Clonefile(src, dst, unix.CLONE_NOFOLLOW) but not 100% identical
 // https://opensource.apple.com/source/copyfile/copyfile-173.40.2/copyfile.c.auto.html
-func Clone(src, dst string) error {
+func Clone(src, dst string, unlink bool) error {
 	state := apfs.CopyFileStateAlloc()
 	defer func() {
 		if err := apfs.CopyFileStateFree(state); err != nil {
 			fs.Errorf(dst, "free state error: %v", err)
 		}
 	}()
-	cloned, err := apfs.CopyFile(src, dst, state, apfs.COPYFILE_CLONE)
+	flag := apfs.COPYFILE_CLONE
+	if unlink { // omit COPYFILE_NOFOLLOW_SRC when using --copy-links
+		flag = apfs.COPYFILE_EXCL | apfs.COPYFILE_ACL | apfs.COPYFILE_STAT | apfs.COPYFILE_XATTR | apfs.COPYFILE_DATA
+	}
+	cloned, err := apfs.CopyFile(src, dst, state, flag)
 	fs.Debugf(dst, "isCloned: %v, error: %v", cloned, err)
 	return err
 }
