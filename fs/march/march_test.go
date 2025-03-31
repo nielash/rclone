@@ -290,7 +290,7 @@ func TestNewMatchEntries(t *testing.T) {
 		c = mockobject.Object("path/c")
 	)
 
-	es := newMatchEntries(fs.DirEntries{a, A, B, c}, nil)
+	es := newMatchEntries(fs.DirEntries{a, A, B, c}, nil, false)
 	assert.Equal(t, es, matchEntries{
 		{name: "A", leaf: "A", entry: A},
 		{name: "B", leaf: "B", entry: B},
@@ -298,7 +298,7 @@ func TestNewMatchEntries(t *testing.T) {
 		{name: "c", leaf: "c", entry: c},
 	})
 
-	es = newMatchEntries(fs.DirEntries{a, A, B, c}, []matchTransformFn{strings.ToLower})
+	es = newMatchEntries(fs.DirEntries{a, A, B, c}, []matchTransformFn{strings.ToLower}, false)
 	assert.Equal(t, es, matchEntries{
 		{name: "a", leaf: "A", entry: A},
 		{name: "a", leaf: "a", entry: a},

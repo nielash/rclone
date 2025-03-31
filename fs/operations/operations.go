@@ -39,6 +39,7 @@ import (
 	"github.com/rclone/rclone/lib/pacer"
 	"github.com/rclone/rclone/lib/random"
 	"github.com/rclone/rclone/lib/readers"
+	"github.com/rclone/rclone/lib/transform"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/text/unicode/norm"
 )
@@ -516,24 +517,7 @@ func SuffixName(ctx context.Context, remote string) string {
 		return remote
 	}
 	if ci.SuffixKeepExtension {
-		var (
-			base  = remote
-			exts  = ""
-			first = true
-			ext   = path.Ext(remote)
-		)
-		for ext != "" {
-			// Look second and subsequent extensions in mime types.
-			// If they aren't found then don't keep it as an extension.
-			if !first && mime.TypeByExtension(ext) == "" {
-				break
-			}
-			base = base[:len(base)-len(ext)]
-			exts = ext + exts
-			first = false
-			ext = path.Ext(base)
-		}
-		return base + ci.Suffix + exts
+		return transform.SuffixKeepExtension(remote, ci.Suffix)
 	}
 	return remote + ci.Suffix
 }
