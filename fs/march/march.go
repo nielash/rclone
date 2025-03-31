@@ -14,6 +14,7 @@ import (
 	"github.com/rclone/rclone/fs/filter"
 	"github.com/rclone/rclone/fs/list"
 	"github.com/rclone/rclone/fs/walk"
+	"github.com/rclone/rclone/lib/transform"
 	"golang.org/x/text/unicode/norm"
 )
 
@@ -275,14 +276,18 @@ func (es matchEntries) sort() {
 }
 
 // make a matchEntries from a newMatch entries
-func newMatchEntries(entries fs.DirEntries, transforms []matchTransformFn) matchEntries {
+func newMatchEntries(entries fs.DirEntries, transforms []matchTransformFn, isSrc bool) matchEntries {
 	es := make(matchEntries, len(entries))
 	for i := range es {
 		es[i].entry = entries[i]
 		name := path.Base(entries[i].Remote())
 		es[i].leaf = name
-		for _, transform := range transforms {
-			name = transform(name)
+		if isSrc {
+			// TODO: handle err
+			name = transform.Path(name, fs.DirEntryType(entries[i]) == "directory")
+		}
+		for _, t := range transforms {
+			name = t(name)
 		}
 		es[i].name = name
 	}
@@ -308,8 +313,8 @@ type matchTransformFn func(name string) string
 //
 // This checks for duplicates and checks the list is sorted.
 func matchListings(srcListEntries, dstListEntries fs.DirEntries, transforms []matchTransformFn) (srcOnly fs.DirEntries, dstOnly fs.DirEntries, matches []matchPair) {
-	srcList := newMatchEntries(srcListEntries, transforms)
-	dstList := newMatchEntries(dstListEntries, transforms)
+	srcList := newMatchEntries(srcListEntries, transforms, true)
+	dstList := newMatchEntries(dstListEntries, transforms, false)
 
 	for iSrc, iDst := 0, 0; ; iSrc, iDst = iSrc+1, iDst+1 {
 		var src, dst fs.DirEntry
@@ -367,10 +372,13 @@ func matchListings(srcListEntries, dstListEntries fs.DirEntries, transforms []ma
 		case src == nil && dst == nil:
 			// do nothing
 		case src == nil:
+			fs.Debugf("dstOnly", "%v srcList: %v", dstName, srcList)
 			dstOnly = append(dstOnly, dst)
 		case dst == nil:
+			fs.Debugf("srcOnly", srcName)
 			srcOnly = append(srcOnly, src)
 		default:
+			fs.Debugf("match", dst.Remote())
 			matches = append(matches, matchPair{src: src, dst: dst})
 		}
 	}
