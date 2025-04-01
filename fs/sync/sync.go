@@ -1375,6 +1375,11 @@ func moveDir(ctx context.Context, fdst, fsrc fs.Fs, deleteEmptySrcDirs bool, cop
 	return runSyncCopyMove(ctx, fdst, fsrc, fs.DeleteModeOff, true, deleteEmptySrcDirs, copyEmptySrcDirs)
 }
 
+// Transform renames fdst in place
+func Transform(ctx context.Context, fdst fs.Fs, deleteEmptySrcDirs bool, copyEmptySrcDirs bool) error {
+	return runSyncCopyMove(ctx, fdst, fdst, fs.DeleteModeOff, true, deleteEmptySrcDirs, copyEmptySrcDirs)
+}
+
 // MoveDir moves fsrc into fdst
 func MoveDir(ctx context.Context, fdst, fsrc fs.Fs, deleteEmptySrcDirs bool, copyEmptySrcDirs bool) error {
 	fi := filter.GetConfig(ctx)

@@ -56,6 +56,14 @@ func Reload(ctx context.Context) (err error) {
 	return newOpt(Opt)
 }
 
+// SetOptions sets the options from flags passed in.
+// Any existing flags will be overwritten.
+// s should be in the same format as cmd line flags, i.e. "all,prefix=XXX"
+func SetOptions(ctx context.Context, s ...string) (err error) {
+	Opt = Options{Flags: Flags{NameTransform: s}}
+	return Reload(ctx)
+}
+
 // overwite Opt.transforms with values from Opt.Flags
 func newOpt(opt Options) (err error) {
 	Opt.transforms = []transform{}
@@ -80,6 +88,8 @@ func parse(s string) (t transform, err error) {
 	return t, err
 }
 
+// parse the tag (file/dir/all), set the option accordingly, and return the trimmed string
+//
 // we don't worry about errors here because it will error anyway as an invalid key
 func (t *transform) parseTag(s string) string {
 	if strings.HasPrefix(s, "file,") {
@@ -194,18 +204,18 @@ type transformChoices struct{}
 
 func (transformChoices) Choices() []string {
 	return []string{
-		ConvNone: "none",
-		/* ConvToNFC:               "nfc",
+		ConvNone:                "none",
+		ConvToNFC:               "nfc",
 		ConvToNFD:               "nfd",
 		ConvToNFKC:              "nfkc",
 		ConvToNFKD:              "nfkd",
-		ConvFindReplace:         "replace", */
+		ConvFindReplace:         "replace",
 		ConvPrefix:              "prefix",
 		ConvSuffix:              "suffix",
 		ConvSuffixKeepExtension: "suffix_keep_extension",
 		ConvTrimPrefix:          "trimprefix",
 		ConvTrimSuffix:          "trimsuffix",
-		/* ConvIndex:               "index",
+		ConvIndex:               "index",
 		ConvDate:                "date",
 		ConvTruncate:            "truncate",
 		ConvBase64Encode:        "base64encode",
@@ -221,7 +231,7 @@ func (transformChoices) Choices() []string {
 		ConvTitlecase:           "titlecase",
 		ConvASCII:               "ascii",
 		ConvURL:                 "url",
-		ConvMapper:              "mapper", */
+		ConvMapper:              "mapper",
 	}
 }
 
