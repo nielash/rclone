@@ -3,6 +3,7 @@ package transform
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -115,11 +116,16 @@ func TestVarious(t *testing.T) {
 		{"stories/The Quick Brown 🦊 Fox Went to the Café!.txt", "stories/The Quick Brown 🦊 Fox Went to the Café!.txt", []string{"all,nfc"}},
 		{"stories/The Quick Brown 🦊 Fox Went to the Café!.txt", "stories/The Quick Brown 🦊 Fox Went to the Café!.txt", []string{"all,nfd"}},
 		{"stories/The Quick Brown 🦊 Fox!.txt", "stories/The Quick Brown  Fox!.txt", []string{"all,ascii"}},
+		{"stories/The Quick Brown 🦊 Fox!.txt", "stories/The+Quick+Brown+%F0%9F%A6%8A+Fox%21.txt", []string{"all,url"}},
 		{"stories/The Quick Brown Fox!.txt", "stories/The Quick Brown Fox!", []string{"all,trimsuffix=.txt"}},
 		{"stories/The Quick Brown Fox!.txt", "OLD_stories/OLD_The Quick Brown Fox!.txt", []string{"all,prefix=OLD_"}},
 		{"stories/The Quick Brown 🦊 Fox Went to the Café!.txt", "stories/The Quick Brown _ Fox Went to the Caf_!.txt", []string{"all,charmap=ISO-8859-7"}},
 		{"stories/The Quick Brown Fox: A Memoir [draft].txt", "stories/The Quick Brown Fox： A Memoir ［draft］.txt", []string{"all,encoder=Colon,SquareBracket"}},
 		{"stories/The Quick Brown 🦊 Fox Went to the Café!.txt", "stories/The Quick Brown 🦊 Fox", []string{"all,truncate=21"}},
+		{"stories/The Quick Brown Fox!.txt", "stories/The Quick Brown Fox!.txt", []string{"all,command=echo"}},
+		{"stories/The Quick Brown Fox!.txt", "stories/The Quick Brown Fox!.txt-" + time.Now().Local().Format("20060102"), []string{"date=-{YYYYMMDD}"}},
+		{"stories/The Quick Brown Fox!.txt", "stories/The Quick Brown Fox!.txt-" + time.Now().Local().Format("2006-01-02 0304PM"), []string{"date=-{macfriendlytime}"}},
+		{"stories/The Quick Brown Fox!.txt", "ababababababab/ababab ababababab ababababab ababab!abababab", []string{"all,regex=[\\.\\w]/ab"}},
 	} {
 		err := SetOptions(context.Background(), test.flags...)
 		require.NoError(t, err)

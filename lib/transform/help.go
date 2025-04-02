@@ -27,7 +27,7 @@ var commandList = []commands{
 	{command: "--name-transform trimsuffix=XXXX", description: "Removes XXXX if it appears at the end of the file name."},
 	{command: "--name-transform regex=/pattern/replacement/", description: "Applies a regex-based transformation."},
 	{command: "--name-transform replace=old:new", description: "Replaces occurrences of old with new in the file name."},
-	{command: "--name-transform date=YYYYMMDD", description: "Appends or prefixes the specified date format."},
+	{command: "--name-transform date={YYYYMMDD}", description: "Appends or prefixes the specified date format."},
 	{command: "--name-transform truncate=N", description: "Truncates the file name to a maximum of N characters."},
 	{command: "--name-transform base64encode", description: "Encodes the file name in Base64."},
 	{command: "--name-transform base64decode", description: "Decodes a Base64-encoded file name."},
@@ -59,6 +59,10 @@ var examples = []example{
 	{"stories/The Quick Brown 🦊 Fox Went to the Café!.txt", []string{"all,charmap=ISO-8859-7"}},
 	{"stories/The Quick Brown Fox: A Memoir [draft].txt", []string{"all,encoder=Colon,SquareBracket"}},
 	{"stories/The Quick Brown 🦊 Fox Went to the Café!.txt", []string{"all,truncate=21"}},
+	{"stories/The Quick Brown Fox!.txt", []string{"all,command=echo"}},
+	{"stories/The Quick Brown Fox!", []string{"date=-{YYYYMMDD}"}},
+	{"stories/The Quick Brown Fox!", []string{"date=-{macfriendlytime}"}},
+	{"stories/The Quick Brown Fox!.txt", []string{"all,regex=[\\.\\w]/ab"}},
 }
 
 func (e example) command() string {

@@ -2,14 +2,19 @@
 package transform
 
 import (
+	"bytes"
 	"encoding/base64"
 	"errors"
 	"fmt"
 	"mime"
+	"net/url"
 	"os"
+	"os/exec"
 	"path"
+	"regexp"
 	"strconv"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/rclone/rclone/fs"
@@ -185,6 +190,19 @@ func transformPathSegment(s string, t transform) (string, error) {
 		return strings.ToTitle(s), nil
 	case ConvASCII:
 		return toASCII(s), nil
+	case ConvURL:
+		return url.QueryEscape(s), nil
+	case ConvDate:
+		return s + AppyTimeGlobs(t.value, time.Now()), nil
+	case ConvRegex:
+		split := strings.Split(t.value, "/")
+		if len(split) != 2 {
+			return s, fmt.Errorf("regex syntax error: %v", t.value)
+		}
+		re := regexp.MustCompile(split[0])
+		return re.ReplaceAllString(s, split[1]), nil
+	case ConvCommand:
+		return mapper(s, t.value)
 	default:
 		return "", errors.New("this option is not yet implemented")
 	}
@@ -223,4 +241,90 @@ func validateSegment(s string) error {
 		return fmt.Errorf("transform cannot add path separators: %v", s)
 	}
 	return nil
+}
+
+// ParseGlobs determines whether a string contains {brackets}
+// and returns the substring (including both brackets) for replacing
+// substring is first opening bracket to last closing bracket --
+// good for {{this}} but not {this}{this}
+func ParseGlobs(s string) (hasGlobs bool, substring string) {
+	open := strings.Index(s, "{")
+	close := strings.LastIndex(s, "}")
+	if open >= 0 && close > open {
+		return true, s[open : close+1]
+	}
+	return false, ""
+}
+
+// TrimBrackets converts {{this}} to this
+func TrimBrackets(s string) string {
+	return strings.Trim(s, "{}")
+}
+
+// TimeFormat converts a user-supplied string to a Go time constant, if possible
+func TimeFormat(timeFormat string) string {
+	switch timeFormat {
+	case "Layout":
+		timeFormat = time.Layout
+	case "ANSIC":
+		timeFormat = time.ANSIC
+	case "UnixDate":
+		timeFormat = time.UnixDate
+	case "RubyDate":
+		timeFormat = time.RubyDate
+	case "RFC822":
+		timeFormat = time.RFC822
+	case "RFC822Z":
+		timeFormat = time.RFC822Z
+	case "RFC850":
+		timeFormat = time.RFC850
+	case "RFC1123":
+		timeFormat = time.RFC1123
+	case "RFC1123Z":
+		timeFormat = time.RFC1123Z
+	case "RFC3339":
+		timeFormat = time.RFC3339
+	case "RFC3339Nano":
+		timeFormat = time.RFC3339Nano
+	case "Kitchen":
+		timeFormat = time.Kitchen
+	case "Stamp":
+		timeFormat = time.Stamp
+	case "StampMilli":
+		timeFormat = time.StampMilli
+	case "StampMicro":
+		timeFormat = time.StampMicro
+	case "StampNano":
+		timeFormat = time.StampNano
+	case "DateTime":
+		timeFormat = time.DateTime
+	case "DateOnly":
+		timeFormat = time.DateOnly
+	case "TimeOnly":
+		timeFormat = time.TimeOnly
+	case "MacFriendlyTime", "macfriendlytime", "mac":
+		timeFormat = "2006-01-02 0304PM" // not actually a Go constant -- but useful as macOS filenames can't have colons
+	case "YYYYMMDD":
+		timeFormat = "20060102"
+	}
+	return timeFormat
+}
+
+// AppyTimeGlobs converts "myfile-{DateOnly}.txt" to "myfile-2006-01-02.txt"
+func AppyTimeGlobs(s string, t time.Time) string {
+	hasGlobs, substring := ParseGlobs(s)
+	if !hasGlobs {
+		return s
+	}
+	timeString := t.Local().Format(TimeFormat(TrimBrackets(substring)))
+	return strings.ReplaceAll(s, substring, timeString)
+}
+
+func mapper(s string, command string) (string, error) {
+	out, err := exec.Command(command, s).CombinedOutput()
+	if err != nil {
+		out = bytes.TrimSpace(out)
+		return s, fmt.Errorf("%s: error running command %q: %v", out, command+" "+s, err)
+	}
+	return string(bytes.TrimSpace(out)), nil
 }

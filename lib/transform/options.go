@@ -161,6 +161,10 @@ func (t *transform) requiresValue() bool {
 		return true
 	case ConvDecoder:
 		return true
+	case ConvRegex:
+		return true
+	case ConvCommand:
+		return true
 	}
 	return false
 }
@@ -197,7 +201,8 @@ const (
 	ConvTitlecase
 	ConvASCII
 	ConvURL
-	ConvMapper
+	ConvRegex
+	ConvCommand
 )
 
 type transformChoices struct{}
@@ -231,7 +236,8 @@ func (transformChoices) Choices() []string {
 		ConvTitlecase:           "titlecase",
 		ConvASCII:               "ascii",
 		ConvURL:                 "url",
-		ConvMapper:              "mapper",
+		ConvRegex:               "regex",
+		ConvCommand:             "command",
 	}
 }
 
