@@ -276,7 +276,7 @@ func (es matchEntries) sort() {
 }
 
 // make a matchEntries from a newMatch entries
-func newMatchEntries(entries fs.DirEntries, transforms []matchTransformFn, isSrc bool) matchEntries {
+func newMatchEntries(ctx context.Context, entries fs.DirEntries, transforms []matchTransformFn, isSrc bool) matchEntries {
 	es := make(matchEntries, len(entries))
 	for i := range es {
 		es[i].entry = entries[i]
@@ -284,7 +284,7 @@ func newMatchEntries(entries fs.DirEntries, transforms []matchTransformFn, isSrc
 		es[i].leaf = name
 		if isSrc {
 			// TODO: handle err
-			name = transform.Path(name, fs.DirEntryType(entries[i]) == "directory")
+			name = transform.Path(ctx, name, fs.DirEntryType(entries[i]) == "directory")
 		}
 		for _, t := range transforms {
 			name = t(name)
@@ -312,9 +312,9 @@ type matchTransformFn func(name string) string
 // Into matches go matchPair's of src and dst which have the same name
 //
 // This checks for duplicates and checks the list is sorted.
-func matchListings(srcListEntries, dstListEntries fs.DirEntries, transforms []matchTransformFn) (srcOnly fs.DirEntries, dstOnly fs.DirEntries, matches []matchPair) {
-	srcList := newMatchEntries(srcListEntries, transforms, true)
-	dstList := newMatchEntries(dstListEntries, transforms, false)
+func matchListings(ctx context.Context, srcListEntries, dstListEntries fs.DirEntries, transforms []matchTransformFn) (srcOnly fs.DirEntries, dstOnly fs.DirEntries, matches []matchPair) {
+	srcList := newMatchEntries(ctx, srcListEntries, transforms, true)
+	dstList := newMatchEntries(ctx, dstListEntries, transforms, false)
 
 	for iSrc, iDst := 0, 0; ; iSrc, iDst = iSrc+1, iDst+1 {
 		var src, dst fs.DirEntry
@@ -462,7 +462,7 @@ func (m *March) processJob(job listDirJob) ([]listDirJob, error) {
 	}
 
 	// Work out what to do and do it
-	srcOnly, dstOnly, matches := matchListings(srcList, dstList, m.transforms)
+	srcOnly, dstOnly, matches := matchListings(m.Ctx, srcList, dstList, m.transforms)
 	for _, src := range srcOnly {
 		if m.aborting() {
 			return nil, m.Ctx.Err()

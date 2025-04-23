@@ -426,7 +426,7 @@ func MoveTransfer(ctx context.Context, fdst fs.Fs, dst fs.Object, remote string,
 // move - see Move for help
 func move(ctx context.Context, fdst fs.Fs, dst fs.Object, remote string, src fs.Object, isTransfer bool) (newDst fs.Object, err error) {
 	origRemote := remote // avoid double-transform on fallback to copy
-	remote = transform.Path(remote, false)
+	remote = transform.Path(ctx, remote, false)
 	ci := fs.GetConfig(ctx)
 	var tr *accounting.Transfer
 	if isTransfer {
@@ -450,7 +450,7 @@ func move(ctx context.Context, fdst fs.Fs, dst fs.Object, remote string, src fs.
 	if doMove := fdst.Features().Move; doMove != nil && (SameConfig(src.Fs(), fdst) || (SameRemoteType(src.Fs(), fdst) && (fdst.Features().ServerSideAcrossConfigs || ci.ServerSideAcrossConfigs))) {
 		// Delete destination if it exists and is not the same file as src (could be same file while seemingly different if the remote is case insensitive)
 		if dst != nil {
-			remote = transform.Path(dst.Remote(), false)
+			remote = transform.Path(ctx, dst.Remote(), false)
 			if !SameObject(src, dst) {
 				err = DeleteFile(ctx, dst)
 				if err != nil {

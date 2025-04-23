@@ -11,6 +11,12 @@ import (
 
 // sync tests are in fs/sync/sync_transform_test.go to avoid import cycle issues
 
+func newOptions(s ...string) (context.Context, error) {
+	ctx := context.Background()
+	err := SetOptions(ctx, s...)
+	return ctx, err
+}
+
 func TestPath(t *testing.T) {
 	for _, test := range []struct {
 		path string
@@ -20,10 +26,10 @@ func TestPath(t *testing.T) {
 		{"toe/toe/toe", "tictactoe/tictactoe/tictactoe"},
 		{"a/b/c", "tictaca/tictacb/tictacc"},
 	} {
-		err := SetOptions(context.Background(), "all,prefix=tac", "all,prefix=tic")
+		ctx, err := newOptions("all,prefix=tac", "all,prefix=tic")
 		require.NoError(t, err)
 
-		got := Path(test.path, false)
+		got := Path(ctx, test.path, false)
 		assert.Equal(t, test.want, got)
 	}
 }
@@ -35,10 +41,10 @@ func TestFileTagOnFile(t *testing.T) {
 	}{
 		{"a/b/c.txt", "a/b/1c.txt"},
 	} {
-		err := SetOptions(context.Background(), "file,prefix=1")
+		ctx, err := newOptions("file,prefix=1")
 		require.NoError(t, err)
 
-		got := Path(test.path, false)
+		got := Path(ctx, test.path, false)
 		assert.Equal(t, test.want, got)
 	}
 }
@@ -50,10 +56,10 @@ func TestDirTagOnFile(t *testing.T) {
 	}{
 		{"a/b/c.txt", "1a/1b/c.txt"},
 	} {
-		err := SetOptions(context.Background(), "dir,prefix=1")
+		ctx, err := newOptions("dir,prefix=1")
 		require.NoError(t, err)
 
-		got := Path(test.path, false)
+		got := Path(ctx, test.path, false)
 		assert.Equal(t, test.want, got)
 	}
 }
@@ -65,10 +71,10 @@ func TestAllTag(t *testing.T) {
 	}{
 		{"a/b/c.txt", "1a/1b/1c.txt"},
 	} {
-		err := SetOptions(context.Background(), "all,prefix=1")
+		ctx, err := newOptions("all,prefix=1")
 		require.NoError(t, err)
 
-		got := Path(test.path, false)
+		got := Path(ctx, test.path, false)
 		assert.Equal(t, test.want, got)
 	}
 }
@@ -80,10 +86,10 @@ func TestFileTagOnDir(t *testing.T) {
 	}{
 		{"a/b", "a/b"},
 	} {
-		err := SetOptions(context.Background(), "file,prefix=1")
+		ctx, err := newOptions("file,prefix=1")
 		require.NoError(t, err)
 
-		got := Path(test.path, true)
+		got := Path(ctx, test.path, true)
 		assert.Equal(t, test.want, got)
 	}
 }
@@ -95,10 +101,10 @@ func TestDirTagOnDir(t *testing.T) {
 	}{
 		{"a/b", "1a/1b"},
 	} {
-		err := SetOptions(context.Background(), "dir,prefix=1")
+		ctx, err := newOptions("dir,prefix=1")
 		require.NoError(t, err)
 
-		got := Path(test.path, true)
+		got := Path(ctx, test.path, true)
 		assert.Equal(t, test.want, got)
 	}
 }
@@ -127,10 +133,10 @@ func TestVarious(t *testing.T) {
 		{"stories/The Quick Brown Fox!.txt", "stories/The Quick Brown Fox!.txt-" + time.Now().Local().Format("2006-01-02 0304PM"), []string{"date=-{macfriendlytime}"}},
 		{"stories/The Quick Brown Fox!.txt", "ababababababab/ababab ababababab ababababab ababab!abababab", []string{"all,regex=[\\.\\w]/ab"}},
 	} {
-		err := SetOptions(context.Background(), test.flags...)
+		ctx, err := newOptions(test.flags...)
 		require.NoError(t, err)
 
-		got := Path(test.path, false)
+		got := Path(ctx, test.path, false)
 		assert.Equal(t, test.want, got)
 	}
 }

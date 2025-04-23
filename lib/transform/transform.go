@@ -3,6 +3,7 @@ package transform
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -26,14 +27,17 @@ import (
 // Path transforms a path s according to the --name-transform options in use
 //
 // If no transforms are in use, s is returned unchanged
-func Path(s string, isDir bool) string {
-	if !Transforming() {
+func Path(ctx context.Context, s string, isDir bool) string {
+	if !Transforming(ctx) {
 		return s
 	}
 
-	var err error
 	old := s
-	for _, t := range Opt.transforms {
+	opt, err := getOptions(ctx)
+	if err != nil {
+		fs.Error(s, err.Error()) // TODO: return err instead of logging it?
+	}
+	for _, t := range opt {
 		if isDir && t.tag == file {
 			continue
 		}
@@ -51,11 +55,6 @@ func Path(s string, isDir bool) string {
 		fs.Debugf(old, "transformed to: %v", s)
 	}
 	return s
-}
-
-// Transforming returns true when transforms are in use
-func Transforming() bool {
-	return len(Opt.transforms) > 0
 }
 
 // transformPath transforms a path string according to the chosen TransformAlgo.

@@ -290,7 +290,7 @@ func TestNewMatchEntries(t *testing.T) {
 		c = mockobject.Object("path/c")
 	)
 
-	es := newMatchEntries(fs.DirEntries{a, A, B, c}, nil, false)
+	es := newMatchEntries(context.TODO(), fs.DirEntries{a, A, B, c}, nil, false)
 	assert.Equal(t, es, matchEntries{
 		{name: "A", leaf: "A", entry: A},
 		{name: "B", leaf: "B", entry: B},
@@ -298,7 +298,7 @@ func TestNewMatchEntries(t *testing.T) {
 		{name: "c", leaf: "c", entry: c},
 	})
 
-	es = newMatchEntries(fs.DirEntries{a, A, B, c}, []matchTransformFn{strings.ToLower}, false)
+	es = newMatchEntries(context.TODO(), fs.DirEntries{a, A, B, c}, []matchTransformFn{strings.ToLower}, false)
 	assert.Equal(t, es, matchEntries{
 		{name: "a", leaf: "A", entry: A},
 		{name: "a", leaf: "a", entry: a},
@@ -517,12 +517,12 @@ func TestMatchListings(t *testing.T) {
 					dstList = append(dstList, dst)
 				}
 			}
-			srcOnly, dstOnly, matches := matchListings(srcList, dstList, test.transforms)
+			srcOnly, dstOnly, matches := matchListings(context.TODO(), srcList, dstList, test.transforms)
 			assert.Equal(t, test.srcOnly, srcOnly, test.what, "srcOnly differ")
 			assert.Equal(t, test.dstOnly, dstOnly, test.what, "dstOnly differ")
 			assert.Equal(t, test.matches, matches, test.what, "matches differ")
 			// now swap src and dst
-			dstOnly, srcOnly, matches = matchListings(dstList, srcList, test.transforms)
+			dstOnly, srcOnly, matches = matchListings(context.TODO(), dstList, srcList, test.transforms)
 			assert.Equal(t, test.srcOnly, srcOnly, test.what, "srcOnly differ")
 			assert.Equal(t, test.dstOnly, dstOnly, test.what, "dstOnly differ")
 			assert.Equal(t, test.matches, matches, test.what, "matches differ")

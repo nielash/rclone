@@ -74,11 +74,12 @@ func (e example) command() string {
 }
 
 func (e example) output() string {
-	err := SetOptions(context.Background(), e.flags...)
+	ctx := context.Background()
+	err := SetOptions(ctx, e.flags...)
 	if err != nil {
 		fs.Errorf(nil, "error generating help text: %v", err)
 	}
-	return Path(e.path, false)
+	return Path(ctx, e.path, false)
 }
 
 // go run ./ convmv --help
@@ -88,7 +89,6 @@ func sprintExamples() string {
 		s += fmt.Sprintf("```\n%s\n", e.command())
 		s += fmt.Sprintf("// Output: %s\n```\n\n", e.output())
 	}
-	Opt = Options{} // reset
 	return s
 }
 
