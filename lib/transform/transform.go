@@ -35,7 +35,8 @@ func Path(ctx context.Context, s string, isDir bool) string {
 	old := s
 	opt, err := getOptions(ctx)
 	if err != nil {
-		fs.Error(s, err.Error()) // TODO: return err instead of logging it?
+		err = fs.CountError(ctx, err)
+		fs.Errorf(s, "Failed to parse transform flags: %v", err)
 	}
 	for _, t := range opt {
 		if isDir && t.tag == file {
@@ -48,7 +49,8 @@ func Path(ctx context.Context, s string, isDir bool) string {
 			s, err = transformPath(s, t, baseOnly)
 		}
 		if err != nil {
-			fs.Error(s, err.Error()) // TODO: return err instead of logging it?
+			err = fs.CountError(ctx, err)
+			fs.Errorf(s, "Failed to transform: %v", err)
 		}
 	}
 	if old != s {

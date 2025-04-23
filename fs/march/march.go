@@ -283,7 +283,6 @@ func newMatchEntries(ctx context.Context, entries fs.DirEntries, transforms []ma
 		name := path.Base(entries[i].Remote())
 		es[i].leaf = name
 		if isSrc {
-			// TODO: handle err
 			name = transform.Path(ctx, name, fs.DirEntryType(entries[i]) == "directory")
 		}
 		for _, t := range transforms {
