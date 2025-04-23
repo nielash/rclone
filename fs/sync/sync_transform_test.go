@@ -478,7 +478,5 @@ func TestError(t *testing.T) {
 	assert.Error(t, err)
 
 	r.CheckLocalListing(t, []fstest.Item{file1}, []string{"toe", "toe/toe"})
-	r.CheckRemoteListing(t, []fstest.Item{}, []string{})
-	err = transform.SetOptions(ctx, "") // has illegal character
-	assert.NoError(t, err)
+	r.CheckRemoteListing(t, []fstest.Item{file1}, []string{"toe", "toe/toe"})
 }

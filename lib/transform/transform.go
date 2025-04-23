@@ -56,6 +56,11 @@ func Path(ctx context.Context, s string, isDir bool) string {
 	if old != s {
 		fs.Debugf(old, "transformed to: %v", s)
 	}
+	if strings.Count(old, "/") != strings.Count(s, "/") {
+		err = fs.CountError(ctx, fmt.Errorf("number of path segments must match: %v (%v), %v (%v)", old, strings.Count(old, "/"), s, strings.Count(s, "/")))
+		fs.Errorf(old, "%v", err)
+		return old
+	}
 	return s
 }
 
@@ -235,7 +240,7 @@ func SuffixKeepExtension(remote string, suffix string) string {
 
 // forbid transformations that add/remove path separators
 func validateSegment(s string) error {
-	if s == "" {
+	if strings.TrimSpace(s) == "" {
 		return errors.New("transform cannot render path segments empty")
 	}
 	if strings.ContainsRune(s, '/') {
