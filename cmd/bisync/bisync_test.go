@@ -614,7 +614,11 @@ func (b *bisyncTest) makeTempRemote(ctx context.Context, remote, subdir string) 
 		parent, err = cache.Get(ctx, b.tempDir)
 		checkError(b.t, err, "parsing local tempdir %s", b.tempDir)
 
-		path = filepath.Join(b.tempDir, b.testCase)
+		if strings.HasPrefix(filepath.Base(remote), "rclone") {
+			path = filepath.Join(remote, b.testCase) // prefer standard fstest remote if we have it
+		} else {
+			path = filepath.Join(b.tempDir, b.testCase)
+		}
 		path = filepath.Join(path, subdir)
 	} else {
 		last := remote[len(remote)-1]
