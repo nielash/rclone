@@ -210,21 +210,29 @@ func (h *OutputHandler) SetLevel(level slog.Level) slog.Level {
 
 // Set the writer for the log to that passed.
 func (h *OutputHandler) setWriter(writer io.Writer) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
 	h.writer = writer
 }
 
 // Set the format flags to that passed in.
 func (h *OutputHandler) setFormat(format logFormat) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
 	h.format = format
 }
 
 // clear format flags that this output type doesn't want
 func (h *OutputHandler) clearFormatFlags(bitMask logFormat) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
 	h.format &^= bitMask
 }
 
 // set format flags that this output type requires
 func (h *OutputHandler) setFormatFlags(bitMask logFormat) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
 	h.format |= bitMask
 }
 
