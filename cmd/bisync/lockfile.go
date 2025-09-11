@@ -114,7 +114,7 @@ func (b *bisyncRun) lockFileIsExpired() bool {
 			return true
 		}
 		fs.Infof(b.lockFile, Color(terminal.RedFg, "Valid lock file found. Expires at %v. (%v from now)"), b.lockFileOpt.data.TimeExpires, time.Since(b.lockFileOpt.data.TimeExpires).Abs().Round(time.Second))
-		prettyprint(b.lockFileOpt.data, "Lockfile info", fs.LogLevelInfo)
+		fs.PrettyPrint(b.lockFileOpt.data, "Lockfile info", fs.LogLevelInfo)
 	}
 	return false
 }

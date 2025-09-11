@@ -158,7 +158,7 @@ func (b *bisyncRun) WriteResults(ctx context.Context, sigil operations.Sigil, sr
 			result.Size = -1
 		}
 
-		prettyprint(result, "writing result", fs.LogLevelDebug)
+		fs.PrettyPrint(result, "writing result", fs.LogLevelDebug)
 		if result.Size < 0 && result.Flags != "d" && ((b.queueOpt.queueCI.CheckSum && !b.downloadHashOpt.downloadHash) || b.queueOpt.queueCI.SizeOnly) {
 			b.queueOpt.once.Do(func() {
 				fs.Log(result.Name, Color(terminal.YellowFg, "Files of unknown size (such as Google Docs) do not sync reliably with --checksum or --size-only. Consider using modtime instead (the default) or --drive-skip-gdocs"))
@@ -181,7 +181,7 @@ func ReadResults(results io.Reader) []Results {
 		if err := dec.Decode(&r); err == io.EOF {
 			break
 		}
-		prettyprint(r, "result", fs.LogLevelDebug)
+		fs.PrettyPrint(r, "result", fs.LogLevelDebug)
 		slice = append(slice, r)
 	}
 	return slice
@@ -252,7 +252,7 @@ func (b *bisyncRun) fastCopy(ctx context.Context, fsrc, fdst fs.Fs, files bilib.
 	ctxCopy, b.CancelSync = context.WithCancel(ctxCopy)
 	b.testFn()
 	err := sync.Sync(ctxCopy, fdst, fsrc, b.opt.CreateEmptySrcDirs)
-	prettyprint(b.queueOpt.logger, "b.queueOpt.logger", fs.LogLevelDebug)
+	fs.PrettyPrint(b.queueOpt.logger, "b.queueOpt.logger", fs.LogLevelDebug)
 
 	getResults := ReadResults(b.queueOpt.logger.JSON)
 	fs.Debugf(nil, "Got %v results for %v", len(getResults), queueName)
@@ -294,7 +294,7 @@ func (b *bisyncRun) resyncDir(ctx context.Context, fsrc, fdst fs.Fs) ([]Results,
 	ctx = b.preCopy(ctx)
 
 	err := sync.CopyDir(ctx, fdst, fsrc, b.opt.CreateEmptySrcDirs)
-	prettyprint(b.queueOpt.logger, "b.queueOpt.logger", fs.LogLevelDebug)
+	fs.PrettyPrint(b.queueOpt.logger, "b.queueOpt.logger", fs.LogLevelDebug)
 
 	getResults := ReadResults(b.queueOpt.logger.JSON)
 	fs.Debugf(nil, "Got %v results for %v", len(getResults), "resync")

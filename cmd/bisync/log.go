@@ -1,7 +1,6 @@
 package bisync
 
 import (
-	"encoding/json"
 	"fmt"
 	"runtime"
 	"strconv"
@@ -97,17 +96,4 @@ func ColorX(style string, s string) string {
 
 func encode(s string) string {
 	return encoder.OS.ToStandardPath(encoder.OS.FromStandardPath(s))
-}
-
-// prettyprint formats JSON for improved readability in debug logs
-func prettyprint(in any, label string, level fs.LogLevel) {
-	inBytes, err := json.MarshalIndent(in, "", "\t")
-	if err != nil {
-		fs.Debugf(nil, "failed to marshal input: %v", err)
-	}
-	if level == fs.LogLevelDebug {
-		fs.Debugf(nil, "%s: \n%s\n", label, string(inBytes))
-	} else if level == fs.LogLevelInfo {
-		fs.Infof(nil, "%s: \n%s\n", label, string(inBytes))
-	}
 }

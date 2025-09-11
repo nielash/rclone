@@ -465,8 +465,8 @@ func (b *bisyncRun) modifyListing(ctx context.Context, src fs.Fs, dst fs.Fs, res
 	}
 
 	fs.Debugf(nil, "updating %s", direction)
-	prettyprint(results, "results", fs.LogLevelDebug)
-	prettyprint(queue, "queue", fs.LogLevelDebug)
+	fs.PrettyPrint(results, "results", fs.LogLevelDebug)
+	fs.PrettyPrint(queue, "queue", fs.LogLevelDebug)
 
 	srcListing, dstListing := b.getListingNames(is1to2)
 	srcList, err := b.loadListing(srcListing)
@@ -521,13 +521,13 @@ func (b *bisyncRun) modifyListing(ctx context.Context, src fs.Fs, dst fs.Fs, res
 		// build src winners list
 		if result.IsSrc && result.Src != "" && (result.Winner.Err == nil || result.Flags == "d") {
 			srcWinners.put(result.Name, result.Size, result.Modtime, result.Hash, "-", result.Flags)
-			prettyprint(result, "winner: copy to src", fs.LogLevelDebug)
+			fs.PrettyPrint(result, "winner: copy to src", fs.LogLevelDebug)
 		}
 
 		// build dst winners list
 		if result.IsWinner && result.Winner.Side != "none" && (result.Winner.Err == nil || result.Flags == "d") {
 			dstWinners.put(result.Name, result.Size, result.Modtime, result.Hash, "-", result.Flags)
-			prettyprint(result, "winner: copy to dst", fs.LogLevelDebug)
+			fs.PrettyPrint(result, "winner: copy to dst", fs.LogLevelDebug)
 		}
 
 		// build errors list
@@ -673,10 +673,10 @@ func (b *bisyncRun) modifyListing(ctx context.Context, src fs.Fs, dst fs.Fs, res
 		trs := accounting.Stats(ctx).Transferred()
 		for _, tr := range trs {
 			b.debugFn(tr.Name, func() {
-				prettyprint(tr, tr.Name, fs.LogLevelInfo)
+				fs.PrettyPrint(tr, tr.Name, fs.LogLevelInfo)
 			})
 			if tr.Error == nil && tr.Bytes > 0 || tr.Size <= 0 {
-				prettyprint(tr, "keeping: "+tr.Name, fs.LogLevelDebug)
+				fs.PrettyPrint(tr, "keeping: "+tr.Name, fs.LogLevelDebug)
 				toKeep = append(toKeep, tr.Name)
 			}
 		}
@@ -690,10 +690,10 @@ func (b *bisyncRun) modifyListing(ctx context.Context, src fs.Fs, dst fs.Fs, res
 			}
 		}
 		oldSrc, oldDst := b.getOldLists(is1to2)
-		prettyprint(oldSrc.list, "oldSrc", fs.LogLevelDebug)
-		prettyprint(oldDst.list, "oldDst", fs.LogLevelDebug)
-		prettyprint(srcList.list, "srcList", fs.LogLevelDebug)
-		prettyprint(dstList.list, "dstList", fs.LogLevelDebug)
+		fs.PrettyPrint(oldSrc.list, "oldSrc", fs.LogLevelDebug)
+		fs.PrettyPrint(oldDst.list, "oldDst", fs.LogLevelDebug)
+		fs.PrettyPrint(srcList.list, "srcList", fs.LogLevelDebug)
+		fs.PrettyPrint(dstList.list, "dstList", fs.LogLevelDebug)
 		combinedList := Concat(oldSrc.list, oldDst.list, srcList.list, dstList.list)
 		for _, f := range combinedList {
 			if !slices.Contains(toKeep, f) && !slices.Contains(toKeep, b.aliases.Alias(f)) && !b.opt.DryRun {
@@ -701,10 +701,10 @@ func (b *bisyncRun) modifyListing(ctx context.Context, src fs.Fs, dst fs.Fs, res
 			}
 		}
 		b.prepareRollback(toRollback, srcList, dstList, is1to2)
-		prettyprint(oldSrc.list, "oldSrc", fs.LogLevelDebug)
-		prettyprint(oldDst.list, "oldDst", fs.LogLevelDebug)
-		prettyprint(srcList.list, "srcList", fs.LogLevelDebug)
-		prettyprint(dstList.list, "dstList", fs.LogLevelDebug)
+		fs.PrettyPrint(oldSrc.list, "oldSrc", fs.LogLevelDebug)
+		fs.PrettyPrint(oldDst.list, "oldDst", fs.LogLevelDebug)
+		fs.PrettyPrint(srcList.list, "srcList", fs.LogLevelDebug)
+		fs.PrettyPrint(dstList.list, "dstList", fs.LogLevelDebug)
 
 		// clear stats so we only do this once
 		accounting.MaxCompletedTransfers = 0
@@ -818,7 +818,7 @@ func (b *bisyncRun) rollback(item string, oldList, newList *fileList) {
 		fs.Debugf(nil, "adding to newlist: %s", alias)
 	} else {
 		fs.Debugf(nil, "removing from newlist: %s (has it?: %v)", item, newList.has(item))
-		prettyprint(newList.list, "newList", fs.LogLevelDebug)
+		fs.PrettyPrint(newList.list, "newList", fs.LogLevelDebug)
 		newList.remove(item)
 		newList.remove(alias)
 	}

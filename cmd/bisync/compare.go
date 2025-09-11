@@ -105,7 +105,7 @@ func (b *bisyncRun) setCompareDefaults(ctx context.Context) (err error) {
 	notSupported("--no-traverse", ci.NoTraverse, &ci.NoTraverse)
 	// TODO: thorough search for other flags that should be on this list...
 
-	prettyprint(b.opt.Compare, "Bisyncing with Comparison Settings", fs.LogLevelInfo)
+	fs.PrettyPrint(b.opt.Compare, "Bisyncing with Comparison Settings", fs.LogLevelInfo)
 	return nil
 }
 
