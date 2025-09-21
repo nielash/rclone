@@ -246,8 +246,8 @@ func (b *bisyncRun) fastCopy(ctx context.Context, fsrc, fdst fs.Fs, files bilib.
 	}
 
 	b.SyncCI = fs.GetConfig(ctxCopy) // allows us to request graceful shutdown
-	if accounting.MaxCompletedTransfers != -1 {
-		accounting.MaxCompletedTransfers = -1 // we need a complete list in the event of graceful shutdown
+	if accounting.MaxCompletedTransfers.Load() != -1 {
+		accounting.MaxCompletedTransfers.Store(-1) // we need a complete list in the event of graceful shutdown
 	}
 	ctxCopy, b.CancelSync = context.WithCancel(ctxCopy)
 	b.testFn()

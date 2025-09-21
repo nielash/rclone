@@ -707,7 +707,7 @@ func (b *bisyncRun) modifyListing(ctx context.Context, src fs.Fs, dst fs.Fs, res
 		prettyprint(dstList.list, "dstList", fs.LogLevelDebug)
 
 		// clear stats so we only do this once
-		accounting.MaxCompletedTransfers = 0
+		accounting.MaxCompletedTransfers.Store(0)
 		accounting.Stats(ctx).PruneTransfers()
 	}
 

@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/rclone/rclone/fs"
@@ -23,7 +24,9 @@ const (
 )
 
 // MaxCompletedTransfers specifies maximum number of completed transfers in startedTransfers list
-var MaxCompletedTransfers = 100
+var MaxCompletedTransfers atomic.Int32
+
+func init() { MaxCompletedTransfers.Store(100) }
 
 // StatsInfo accounts all transfers
 // N.B.: if this struct is modified, please remember to also update sum() function in stats_groups
@@ -914,12 +917,12 @@ func (s *StatsInfo) RemoveTransfer(transfer *Transfer) {
 // PruneTransfers makes sure there aren't too many old transfers by removing
 // single finished transfer.
 func (s *StatsInfo) PruneTransfers() {
-	if MaxCompletedTransfers < 0 {
+	if MaxCompletedTransfers.Load() < 0 {
 		return
 	}
 	s.mu.Lock()
 	// remove a transfer from the start if we are over quota
-	if len(s.startedTransfers) > MaxCompletedTransfers+s.ci.Transfers {
+	if len(s.startedTransfers) > int(MaxCompletedTransfers.Load())+s.ci.Transfers {
 		for i, tr := range s.startedTransfers {
 			if tr.IsDone() {
 				s._removeTransfer(tr, i)
