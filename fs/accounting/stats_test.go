@@ -436,9 +436,9 @@ func TestPruneTransfers(t *testing.T) {
 		},
 	} {
 		t.Run(test.Name, func(t *testing.T) {
-			prevLimit := MaxCompletedTransfers
-			MaxCompletedTransfers = test.Limit
-			defer func() { MaxCompletedTransfers = prevLimit }()
+			prevLimit := MaxCompletedTransfers.Load()
+			MaxCompletedTransfers.Store(int32(test.Limit))
+			defer func() { MaxCompletedTransfers.Store(prevLimit) }()
 
 			s := NewStats(ctx)
 			for i := int64(1); i <= int64(test.Transfers); i++ {
@@ -461,7 +461,6 @@ func TestPruneTransfers(t *testing.T) {
 			assert.Equal(t, time.Duration(test.Transfers)*time.Second, s._totalDuration())
 			assert.Equal(t, test.ExpectedStartedTransfers, len(s.startedTransfers))
 			s.mu.Unlock()
-
 		})
 	}
 }
