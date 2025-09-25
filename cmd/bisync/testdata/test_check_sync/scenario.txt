@@ -17,8 +17,8 @@ test 1. run check-sync-only on a clean sync
 bisync check-sync-only
 
 test 2. inject modified listings into the workdir
-copy-as {datadir/}_testdir_path1.._testdir_path2.path1.lst {workdir/} {session}.path1.lst
-copy-as {datadir/}_testdir_path1.._testdir_path2.path2.lst {workdir/} {session}.path2.lst
+copy-as {datadir/}_testdir_.path1.lst {workdir/} {session}.path1.lst
+copy-as {datadir/}_testdir_.path2.lst {workdir/} {session}.path2.lst
 
 test 3. run check-sync-only on modified listings
 bisync check-sync-only

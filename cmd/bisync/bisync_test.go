@@ -183,24 +183,24 @@ var (
 // bisyncTest keeps all test data in a single place
 type bisyncTest struct {
 	// per-test state
-	t           *testing.T
-	step        int
-	stopped     bool
-	stepStr     string
-	testCase    string
-	sessionName string
+	t            *testing.T
+	step         int
+	stopped      bool
+	stepStr      string
+	testCase     string
+	sessionNames []string
 	// test dirs
-	testDir    string
-	dataDir    string
-	initDir    string
-	goldenDir  string
-	workDir    string
-	fs1        fs.Fs
-	path1      string
-	canonPath1 string
-	fs2        fs.Fs
-	path2      string
-	canonPath2 string
+	testDir   string
+	dataDir   string
+	initDir   string
+	goldenDir string
+	workDir   string
+	fs1       fs.Fs
+	path1     string
+	// canonPath1 string
+	fs2   fs.Fs
+	path2 string
+	// canonPath2 string
 	// test log
 	logDir  string
 	logPath string
@@ -429,21 +429,21 @@ func (b *bisyncTest) runTestCase(ctx context.Context, t *testing.T, testCase str
 	b.testCase = testCase
 	var err error
 
-	b.fs1, b.parent1, b.path1, b.canonPath1 = b.makeTempRemote(ctx, b.argRemote1, "path1")
-	b.fs2, b.parent2, b.path2, b.canonPath2 = b.makeTempRemote(ctx, b.argRemote2, "path2")
+	b.fs1, b.parent1, b.path1 = b.makeTempRemote(ctx, b.argRemote1, "path1")
+	b.fs2, b.parent2, b.path2 = b.makeTempRemote(ctx, b.argRemote2, "path2")
 
 	if strings.Contains(b.replaceHex(b.path1), " ") || strings.Contains(b.replaceHex(b.path2), " ") {
 		b.t.Skip("skipping as tests can't handle spaces config string")
 	}
 
-	b.sessionName = bilib.SessionName(b.fs1, b.fs2)
+	b.sessionNames = []string{bilib.SessionName(b.fs1, b.fs2)}
 	b.testDir = b.ensureDir(b.dataRoot, "test_"+b.testCase, false)
 	b.initDir = b.ensureDir(b.testDir, "initial", false)
 	b.goldenDir = b.ensureDir(b.testDir, "golden", false)
 	b.dataDir = b.ensureDir(b.testDir, "modfiles", true) // optional
 
 	// normalize unicode so tets are runnable on macOS
-	b.sessionName = norm.NFC.String(b.sessionName)
+	b.sessionNames[0] = norm.NFC.String(b.sessionNames[0])
 	b.goldenDir = norm.NFC.String(b.goldenDir)
 
 	// For test stability, jam initial dates to a fixed past date.
@@ -617,7 +617,7 @@ func isLocal(remote string) bool {
 
 // makeTempRemote creates temporary folder and makes a filesystem
 // if a local path is provided, it's ignored (the test will run under system temp)
-func (b *bisyncTest) makeTempRemote(ctx context.Context, remote, subdir string) (f, parent fs.Fs, path, canon string) {
+func (b *bisyncTest) makeTempRemote(ctx context.Context, remote, subdir string) (f, parent fs.Fs, path string) {
 	var err error
 	if isLocal(remote) {
 		if remote != "" && !strings.HasPrefix(remote, "local") && *fstest.RemoteName != "" {
@@ -644,8 +644,7 @@ func (b *bisyncTest) makeTempRemote(ctx context.Context, remote, subdir string) 
 
 	f, err = cache.Get(ctx, path)
 	checkError(b.t, err, "parsing remote/subdir %s/%s", remote, subdir)
-	path = bilib.FsPath(f)                                                                                                                // Make it canonical
-	canon = bilib.StripHexString(bilib.CanonicalPath(strings.TrimSuffix(strings.TrimSuffix(path, `\`+subdir+`\`), "/"+subdir+"/"))) + "_" // account for possible connection string
+	path = bilib.FsPath(f) // Make it canonical
 	return
 }
 
@@ -1167,6 +1166,7 @@ func (b *bisyncTest) runBisync(ctx context.Context, args []string) (err error) {
 		case "subdir":
 			fs1 = addSubdir(b.replaceHex(b.path1), val)
 			fs2 = addSubdir(b.replaceHex(b.path2), val)
+			b.sessionNames = append(b.sessionNames, bilib.SessionName(fs1, fs2))
 		case "backupdir1":
 			opt.BackupDir1 = val
 		case "backupdir2":
@@ -1818,8 +1818,14 @@ func (b *bisyncTest) newReplacer(mangle bool) *strings.Replacer {
 			"{workdir/}", b.workDir + slash,
 			"{path1/}", b.replaceHex(b.path1),
 			"{path2/}", b.replaceHex(b.path2),
-			"{session}", b.sessionName,
 			"{/}", slash,
+		}
+		for i, session := range b.sessionNames {
+			s := "{session}"
+			if len(b.sessionNames) > 1 {
+				s = fmt.Sprintf("{session-%v}", i)
+			}
+			rep = append(rep, s, session)
 		}
 		return strings.NewReplacer(rep...)
 	}
@@ -1839,7 +1845,13 @@ func (b *bisyncTest) newReplacer(mangle bool) *strings.Replacer {
 		strings.TrimSuffix(b.path1, slash), "{path1}", // ensure it's still recognized without trailing slash
 		strings.TrimSuffix(b.path2, slash), "{path2}",
 		b.workDir, "{workdir}",
-		b.sessionName, "{session}",
+	}
+	for i, session := range b.sessionNames {
+		s := "{session}"
+		if len(b.sessionNames) > 1 {
+			s = fmt.Sprintf("{session-%v}", i)
+		}
+		rep = append(rep, session, s)
 	}
 	// convert all hash types to "{hashtype}"
 	for _, ht := range hash.Supported().Array() {
@@ -1861,11 +1873,10 @@ func (b *bisyncTest) newReplacer(mangle bool) *strings.Replacer {
 }
 
 // toGolden makes a result file name golden.
-// It replaces each canonical path separately instead of using the
-// session name to allow for subdirs in the extended-char-paths case.
 func (b *bisyncTest) toGolden(name string) string {
-	name = strings.ReplaceAll(name, b.canonPath1, goldenCanonBase)
-	name = strings.ReplaceAll(name, b.canonPath2, goldenCanonBase)
+	for _, session := range b.sessionNames {
+		name = strings.ReplaceAll(name, session, goldenCanonBase)
+	}
 	name = strings.TrimSuffix(name, ".sav")
 
 	// normalize unicode so tets are runnable on macOS

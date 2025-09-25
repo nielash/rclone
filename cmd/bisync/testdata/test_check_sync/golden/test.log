@@ -39,8 +39,8 @@ INFO  : Validating listings for Path1 "{path1/}" vs Path2 "{path2/}"
 INFO  : [32mBisync successful[0m
 
 [36m(06)  :[0m [34mtest 2. inject modified listings into the workdir[0m
-[36m(07)  :[0m [34mcopy-as {datadir/}_testdir_path1.._testdir_path2.path1.lst {workdir/} {session}.path1.lst[0m
-[36m(08)  :[0m [34mcopy-as {datadir/}_testdir_path1.._testdir_path2.path2.lst {workdir/} {session}.path2.lst[0m
+[36m(07)  :[0m [34mcopy-as {datadir/}_testdir_.path1.lst {workdir/} {session}.path1.lst[0m
+[36m(08)  :[0m [34mcopy-as {datadir/}_testdir_.path2.lst {workdir/} {session}.path2.lst[0m
 
 [36m(09)  :[0m [34mtest 3. run check-sync-only on modified listings[0m
 [36m(10)  :[0m [34mbisync check-sync-only[0m
