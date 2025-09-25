@@ -42,6 +42,8 @@ type Options struct {
 	Force                 bool
 	FiltersFile           string
 	Workdir               string
+	SessionName           string
+	SessionNameLimit      int
 	OrigBackupDir         string
 	BackupDir1            string
 	BackupDir2            string
@@ -120,6 +122,7 @@ var Opt Options
 
 func init() {
 	Opt.MaxLock = 0
+	Opt.SessionNameLimit = -1
 	cmd.Root.AddCommand(commandDefinition)
 	cmdFlags := commandDefinition.Flags()
 	// when adding new flags, remember to also update the rc params:
@@ -135,6 +138,8 @@ func init() {
 	flags.BoolVarP(cmdFlags, &Opt.RemoveEmptyDirs, "remove-empty-dirs", "", Opt.RemoveEmptyDirs, "Remove ALL empty directories at the final cleanup step.", "")
 	flags.StringVarP(cmdFlags, &Opt.FiltersFile, "filters-file", "", Opt.FiltersFile, "Read filtering patterns from a file", "")
 	flags.StringVarP(cmdFlags, &Opt.Workdir, "workdir", "", Opt.Workdir, makeHelp("Use custom working dir - useful for testing. (default: {WORKDIR})"), "")
+	flags.StringVarP(cmdFlags, &Opt.SessionName, "session", "", Opt.SessionName, "Use custom session name", "")
+	flags.IntVarP(cmdFlags, &Opt.SessionNameLimit, "session-name-limit", "", Opt.SessionNameLimit, "Specify a max filename length for the session name", "") // TODO: add detail
 	flags.StringVarP(cmdFlags, &Opt.BackupDir1, "backup-dir1", "", Opt.BackupDir1, "--backup-dir for Path1. Must be a non-overlapping path on the same remote.", "")
 	flags.StringVarP(cmdFlags, &Opt.BackupDir2, "backup-dir2", "", Opt.BackupDir2, "--backup-dir for Path2. Must be a non-overlapping path on the same remote.", "")
 	flags.StringVarP(cmdFlags, &Opt.DebugName, "debugname", "", Opt.DebugName, "Debug by tracking one file at various points throughout a bisync run (when -v or -vv)", "")

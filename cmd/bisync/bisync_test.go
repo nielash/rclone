@@ -50,13 +50,14 @@ import (
 )
 
 const (
-	touchDateFormat = "2006-01-02"
-	goldenCanonBase = "_testdir_"
-	logFileName     = "test.log"
-	dropMe          = "*** [DROP THIS LINE] ***"
-	eol             = "\n"
-	slash           = string(os.PathSeparator)
-	fixSlash        = (runtime.GOOS == "windows")
+	touchDateFormat  = "2006-01-02"
+	goldenCanonBase  = "_testdir_"
+	logFileName      = "test.log"
+	dropMe           = "*** [DROP THIS LINE] ***"
+	eol              = "\n"
+	slash            = string(os.PathSeparator)
+	fixSlash         = (runtime.GOOS == "windows")
+	sessionNameLimit = 255
 )
 
 var initDate = time.Date(2000, time.January, 1, 0, 0, 0, 0, bisync.TZ)
@@ -436,7 +437,7 @@ func (b *bisyncTest) runTestCase(ctx context.Context, t *testing.T, testCase str
 		b.t.Skip("skipping as tests can't handle spaces config string")
 	}
 
-	b.sessionNames = []string{bilib.SessionName(b.fs1, b.fs2)}
+	b.sessionNames = []string{bilib.SessionName(b.fs1, b.fs2, "", sessionNameLimit)}
 	b.testDir = b.ensureDir(b.dataRoot, "test_"+b.testCase, false)
 	b.initDir = b.ensureDir(b.testDir, "initial", false)
 	b.goldenDir = b.ensureDir(b.testDir, "golden", false)
@@ -873,7 +874,7 @@ func (b *bisyncTest) runTestStep(ctx context.Context, line string) (err error) {
 						fs.Debugf(tmpDirFs, "error attempting to move folder to %s: %v", fsrc.Root(), err)
 					}
 				} else {
-					fs.Debugf(nil, "old and new are equal. Skipping. %s (%s) %s (%s)", old, stringToHash(old), new, stringToHash(new))
+					fs.Debugf(nil, "old and new are equal. Skipping. %s (%s) %s (%s)", old, bilib.StringToHash(old), new, bilib.StringToHash(new))
 				}
 			}
 
@@ -886,15 +887,15 @@ func (b *bisyncTest) runTestStep(ctx context.Context, line string) (err error) {
 		}
 
 		// if it's a file
-		fs.Debugf(remotePath, "attempting to fix file -- filename hash: %s", stringToHash(leaf))
+		fs.Debugf(remotePath, "attempting to fix file -- filename hash: %s", bilib.StringToHash(leaf))
 		fixFilename := func(old, new string) {
 			ok, err := fs.FileExists(ctx, fsrc, old)
 			if err != nil {
 				fs.Debugf(remotePath, "error checking if file exists: %v", err)
 			}
-			fs.Debugf(old, "file exists: %v %s", ok, stringToHash(old))
+			fs.Debugf(old, "file exists: %v %s", ok, bilib.StringToHash(old))
 			fs.Debugf(nil, "FILE old: %s new: %s equal: %v", old, new, old == new)
-			fs.Debugf(nil, "HASH old: %s new: %s equal: %v", stringToHash(old), stringToHash(new), stringToHash(old) == stringToHash(new))
+			fs.Debugf(nil, "HASH old: %s new: %s equal: %v", bilib.StringToHash(old), bilib.StringToHash(new), bilib.StringToHash(old) == bilib.StringToHash(new))
 			if ok && new != old {
 				fs.Debugf(new, "attempting to rename %s to %s", old, new)
 				srcObj, err := fsrc.NewObject(ctx, old)
@@ -925,7 +926,7 @@ func (b *bisyncTest) runTestStep(ctx context.Context, line string) (err error) {
 			return
 		}
 		// include hash of filename to make unicode form differences easier to see in logs
-		fs.Debugf(remotePath, "verified file exists at correct path. filename hash: %s", stringToHash(leaf))
+		fs.Debugf(remotePath, "verified file exists at correct path. filename hash: %s", bilib.StringToHash(leaf))
 		return
 	default:
 		return fmt.Errorf("unknown command: %q", args[0])
@@ -1099,13 +1100,14 @@ func (b *bisyncTest) checkPreReqs(ctx context.Context, opt *bisync.Options) (con
 
 func (b *bisyncTest) runBisync(ctx context.Context, args []string) (err error) {
 	opt := &bisync.Options{
-		Workdir:       b.workDir,
-		NoCleanup:     true,
-		SaveQueues:    true,
-		MaxDelete:     bisync.DefaultMaxDelete,
-		CheckFilename: bisync.DefaultCheckFilename,
-		CheckSync:     bisync.CheckSyncTrue,
-		TestFn:        b.TestFn,
+		Workdir:          b.workDir,
+		NoCleanup:        true,
+		SaveQueues:       true,
+		MaxDelete:        bisync.DefaultMaxDelete,
+		CheckFilename:    bisync.DefaultCheckFilename,
+		CheckSync:        bisync.CheckSyncTrue,
+		TestFn:           b.TestFn,
+		SessionNameLimit: sessionNameLimit,
 	}
 	ctx, opt = b.checkPreReqs(ctx, opt)
 	octx, ci := fs.AddConfig(ctx)
@@ -1166,7 +1168,7 @@ func (b *bisyncTest) runBisync(ctx context.Context, args []string) (err error) {
 		case "subdir":
 			fs1 = addSubdir(b.replaceHex(b.path1), val)
 			fs2 = addSubdir(b.replaceHex(b.path2), val)
-			b.sessionNames = append(b.sessionNames, bilib.SessionName(fs1, fs2))
+			b.sessionNames = append(b.sessionNames, bilib.SessionName(fs1, fs2, "", sessionNameLimit))
 		case "backupdir1":
 			opt.BackupDir1 = val
 		case "backupdir2":
@@ -1323,7 +1325,7 @@ func (b *bisyncTest) listSubdirs(ctx context.Context, remote string, DirsOnly bo
 	fmt.SetDirSlash(true)
 	fmt.AddPath()
 	printItem := func(item *operations.ListJSONItem) error {
-		b.logPrintf("%s - filename hash: %s", fmt.Format(item), stringToHash(item.Name))
+		b.logPrintf("%s - filename hash: %s", fmt.Format(item), bilib.StringToHash(item.Name))
 		return nil
 	}
 	return operations.ListJSON(ctx, f, "", &opt, printItem)
@@ -1971,25 +1973,6 @@ func normalizeEncoding(s string) string {
 	nameVal = filepath.Clean(nameVal)
 	nameVal = encoder.OS.FromStandardPath(nameVal)
 	return strconv.Quote(encoder.OS.ToStandardPath(filepath.ToSlash(nameVal)))
-}
-
-func stringToHash(s string) string {
-	ht := hash.MD5
-	hasher, err := hash.NewMultiHasherTypes(hash.NewHashSet(ht))
-	if err != nil {
-		fs.Errorf(s, "hash unsupported: %v", err)
-	}
-
-	_, err = hasher.Write([]byte(s))
-	if err != nil {
-		fs.Errorf(s, "failed to write to hasher: %v", err)
-	}
-
-	sum, err := hasher.SumString(ht, false)
-	if err != nil {
-		fs.Errorf(s, "hasher returned an error: %v", err)
-	}
-	return sum
 }
 
 func detectEncoding(s string) string {
