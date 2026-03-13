@@ -672,7 +672,7 @@ type ConfigInfo struct {
 	DisableHTTPKeepAlives      bool              `config:"disable_http_keep_alives"`
 	Metadata                   bool              `config:"metadata"`
 	ServerSideAcrossConfigs    bool              `config:"server_side_across_configs"`
-	TerminalColorMode          TerminalColorMode `config:"color"`
+	TerminalColorMode          TerminalColorMode `config:"color"`        // note that this is --color on CLI but "TerminalColorMode" on rc
 	DefaultTime                Time              `config:"default_time"` // time that directories with no time should display
 	Inplace                    bool              `config:"inplace"`      // Download directly to destination file instead of atomic download to temp/rename
 	PartialSuffix              string            `config:"partial_suffix"`
