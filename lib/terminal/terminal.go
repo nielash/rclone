@@ -67,33 +67,45 @@ const (
 	BEL         = "\007"
 )
 
-var (
-	// make sure that start is only called once
-	once sync.Once
-)
+// make sure that start is only called once
+var once sync.Once
 
 // Start the terminal - must be called before use
 func Start() {
 	once.Do(func() {
 		ci := fs.GetConfig(context.Background())
-
 		f := os.Stdout
-		if !IsTerminal(int(f.Fd())) {
-			// If stdout is not a tty, remove escape codes EXCEPT if terminal color mode equals "ALWAYS"
-			if ci.TerminalColorMode == fs.TerminalColorModeAlways {
-				Out = colorable.NewColorable(f)
-			} else {
-				Out = colorable.NewNonColorable(f)
-			}
-		} else if runtime.GOOS == "windows" && os.Getenv("TERM") != "" {
+		if IsTerminal(int(f.Fd())) && runtime.GOOS == "windows" && os.Getenv("TERM") != "" {
 			// If TERM is set just use stdout
 			Out = f
-		} else if ci.TerminalColorMode == fs.TerminalColorModeNever {
-			Out = colorable.NewNonColorable(f)
-		} else {
+			return
+		}
+		if ShouldUseColors(ci) {
 			Out = colorable.NewColorable(f)
+		} else {
+			Out = colorable.NewNonColorable(f)
 		}
 	})
+}
+
+// ShouldUseColors returns true if colors should be used, based on config settings
+func ShouldUseColors(ci *fs.ConfigInfo) bool {
+	switch ci.TerminalColorMode {
+	case fs.TerminalColorModeNever:
+		return false
+	case fs.TerminalColorModeAlways:
+		return true
+	}
+
+	// TerminalColorModeAuto
+	f := os.Stdout
+	if !IsTerminal(int(f.Fd())) {
+		return false
+	} else if runtime.GOOS == "windows" && os.Getenv("TERM") != "" {
+		// If TERM is set just use stdout
+		return false
+	}
+	return true
 }
 
 // WriteString writes the string passed in to the terminal
