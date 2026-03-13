@@ -35,3 +35,22 @@ func ReadPassword(fd int) ([]byte, error) {
 func WriteTerminalTitle(title string) {
 	fmt.Print(ChangeTitle + title + BEL)
 }
+
+// Checker is a terminal interface, mainly so we can mock a terminal on tests
+type Checker interface {
+	IsTerminal(fd int) bool
+	F() *os.File
+}
+
+// Terminal is the default implementation of the Checker interface
+type Terminal struct{}
+
+// IsTerminal returns true if fd is a terminal
+func (r Terminal) IsTerminal(fd int) bool {
+	return IsTerminal(fd)
+}
+
+// F just returns os.Stdout
+func (r Terminal) F() *os.File {
+	return os.Stdout
+}

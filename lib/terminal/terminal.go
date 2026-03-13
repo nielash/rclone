@@ -75,8 +75,9 @@ var once sync.Once
 func Start() {
 	once.Do(func() {
 		ci := fs.GetConfig(context.Background())
-		f := os.Stdout
-		if IsTerminal(int(f.Fd())) && runtime.GOOS == "windows" && os.Getenv("TERM") != "" {
+		t := defaultTerminal
+		f := t.F()
+		if t.IsTerminal(int(f.Fd())) && runtime.GOOS == "windows" && os.Getenv("TERM") != "" {
 			// If TERM is set just use stdout
 			Out = f
 			return
@@ -89,6 +90,8 @@ func Start() {
 	})
 }
 
+var defaultTerminal Checker = Terminal{}
+
 // ShouldUseColors returns true if colors should be used, based on config settings
 func ShouldUseColors(ci *fs.ConfigInfo) bool {
 	switch ci.TerminalColorMode {
@@ -99,8 +102,9 @@ func ShouldUseColors(ci *fs.ConfigInfo) bool {
 	}
 
 	// TerminalColorModeAuto
-	f := os.Stdout
-	if !IsTerminal(int(f.Fd())) {
+	t := defaultTerminal
+	f := t.F()
+	if !t.IsTerminal(int(f.Fd())) {
 		return false
 	} else if runtime.GOOS == "windows" && os.Getenv("TERM") != "" {
 		// If TERM is set just use stdout
