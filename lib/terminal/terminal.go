@@ -11,6 +11,7 @@ import (
 
 	colorable "github.com/mattn/go-colorable"
 	"github.com/rclone/rclone/fs"
+	"github.com/rclone/rclone/fs/rc"
 )
 
 // VT100 codes
@@ -105,7 +106,7 @@ func ShouldUseColors(ci *fs.ConfigInfo) bool {
 		// If TERM is set just use stdout
 		return false
 	}
-	if ci.UseJSONLog {
+	if ci.UseJSONLog || rc.Opt.Enabled {
 		return false
 	}
 	return true
