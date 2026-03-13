@@ -105,6 +105,9 @@ func ShouldUseColors(ci *fs.ConfigInfo) bool {
 		// If TERM is set just use stdout
 		return false
 	}
+	if ci.UseJSONLog {
+		return false
+	}
 	return true
 }
 
